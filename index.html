@@ -291,6 +291,34 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
   .gopen{margin-left:0;margin-top:4px}
   .gitem{flex-wrap:wrap}
 }
+
+/* ===== 학습 달력 ===== */
+.calcard{padding:16px 18px}
+.calhead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.calhead .td{font-size:17px;font-weight:800;letter-spacing:-.01em}
+.calstats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 14px}
+.calstats .cs{background:var(--paper);border-radius:8px;padding:9px 10px}
+.calstats .cs b{display:block;font-family:var(--mono);font-size:18px;line-height:1.2}
+.calstats .cs span{font-size:11.5px;color:var(--muted)}
+.calnav{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.calnav button{border:1px solid var(--line);background:var(--card);border-radius:8px;width:34px;height:30px;font-size:15px;color:var(--ink)}
+.calnav .mt{font-weight:700;font-size:14px}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.calgrid .wd{font-size:11px;text-align:center;color:var(--faint);padding-bottom:2px}
+.calgrid .wd.sun{color:var(--bad)} .calgrid .wd.sat{color:var(--kr)}
+.cday{position:relative;width:100%;height:46px;border:0;border-radius:8px;background:transparent;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;color:var(--ink);padding:0;line-height:1.1}
+.cday.out{visibility:hidden}
+.cday.future{color:var(--faint)}
+.cday.l1{background:var(--teal-wash)} .cday.l2{background:#b9dbd6} .cday.l3{background:#6fb5ab;color:#fff} .cday.l4{background:var(--teal);color:#fff}
+.cday .tm{font-size:9.5px;font-family:var(--mono);opacity:.85;margin-top:2px}
+.cday.today{box-shadow:inset 0 0 0 2px var(--amber);font-weight:800}
+.cday.sel{outline:2px solid var(--ink);outline-offset:1px}
+.calleg{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--faint);margin-top:8px;justify-content:flex-end}
+.calleg i{display:inline-block;width:12px;height:12px;border-radius:3px}
+.caldet{margin-top:12px;padding:10px 12px;background:var(--paper);border-radius:8px;font-size:13px;line-height:1.7;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.caldet button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:5px 10px;font-size:12.5px;color:var(--ink)}
+@media(max-width:560px){.calstats{grid-template-columns:repeat(2,1fr)}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 :focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 .dgmore{margin-top:12px;border-top:1px solid var(--line)}
@@ -493,7 +521,7 @@ async function load(){
   TOPICS.forEach(t=>{if(!S.topics[t.id])S.topics[t.id]={status:'todo',note:'',checks:{},rounds:[]};
     if(!Array.isArray(S.topics[t.id].rounds))S.topics[t.id].rounds=[];});
   S.mn=S.mn||{}; S.plan=S.plan||{}; PLAN.weeks.forEach(w=>{if(!S.plan[w.id])S.plan[w.id]={done:false};});
-  S.hl=S.hl||{}; S.qmemo=S.qmemo||{};
+  S.hl=S.hl||{}; S.qmemo=S.qmemo||{}; S.tlog=S.tlog||{}; S.tman=S.tman||{};
 }
 let saveT=null;
 function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{if(SYNC.on&&!SYNC.applying)S._ts=Date.now();try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}if(SYNC.on&&!SYNC.applying)SYNC.push();},150);}
@@ -517,7 +545,7 @@ function bumpStreak(){initDays(); const t=today();if(S.meta.lastDay===t)return f
   if(S.meta.lastDay){const gap=dayNum(t)-dayNum(S.meta.lastDay);
     S.meta.streak=gap===1?(S.meta.streak||0)+1:1;}else S.meta.streak=1;
   S.meta.lastDay=t; S.meta.days=(S.meta.days||0)+1; return true;}
-function markVisit(){try{if(S&&S.meta&&bumpStreak())save();}catch(e){}}
+function markVisit(){try{if(!S||!S.meta)return;let ch=false;S.tlog=S.tlog||{};const k=dkey();if(!S.tlog[k]){S.tlog[k]={};ch=true;}if(bumpStreak())ch=true;if(ch)save();}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)markVisit();});
 function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:9px;font-size:13.5px;z-index:50;box-shadow:var(--shadow);max-width:90%';
@@ -707,6 +735,7 @@ document.addEventListener('scroll',()=>hlClose(),true);
 function renderHome(){
   const d=drillStats(), c=currStats(), gq=gqStats(), RS=roundSummary();
   app().innerHTML=`
+  <div class="card calcard" id="calbox"></div>
   <div class="hsplit">
     <div class="card metric">
       <div class="lab"><span class="dot" style="background:var(--teal)"></span>출제범위 가이드라인</div>
@@ -776,12 +805,95 @@ function renderHome(){
       if(card){card.classList.add('open');card.scrollIntoView({behavior:'smooth',block:'center'});}},60);
   });
   $('#reset').onclick=doReset;
+  renderCal();
 }
 async function doReset(){
   if(!confirm('모든 진도(학습 상태·메모·형광펜·정답률·암기 단계·별표)를 지웁니다. 되돌릴 수 없어요. 초기화할까요?'))return;
   S=blank(); try{await STORE.set(KEY,JSON.stringify(S));}catch(e){} renderHome(); toast('초기화했습니다.');
 }
 
+
+
+/* ================= 학습 기록 (방문일·학습 시간) ================= */
+function pad2(n){return String(n).padStart(2,'0');}
+function dkey(d){d=d||new Date();return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());}
+function normKey(ds){const a=String(ds).split('-').map(Number);return a[0]+'-'+pad2(a[1])+'-'+pad2(a[2]);}
+const DEV=(()=>{try{let v=localStorage.getItem('idpc_dev');if(!v){v=Math.random().toString(36).slice(2,8);localStorage.setItem('idpc_dev',v);}return v;}catch(e){return 'dev';}})();
+function tlogDay(k){S.tlog=S.tlog||{};return S.tlog[k]||(S.tlog[k]={});}
+function autoSec(k){const o=(S.tlog||{})[k];if(!o)return 0;return Object.values(o).reduce((a,b)=>a+(+b||0),0);}
+function daySec(k){const m=(S.tman||{})[k];return (typeof m==='number')?m*60:autoSec(k);}
+function studiedDays(){
+  const set=new Set(Object.keys(S.tlog||{}));
+  Object.keys(S.tman||{}).forEach(k=>{if(S.tman[k]>0)set.add(k);});
+  Object.values(S.topics||{}).forEach(t=>(t&&Array.isArray(t.rounds)?t.rounds:[]).forEach(r=>set.add(normKey(r))));
+  ['q','gq'].forEach(g=>Object.values(S[g]||{}).forEach(x=>{if(x&&x.lastTs)set.add(dkey(new Date(x.lastTs)));}));
+  if(S.meta&&S.meta.lastDay)set.add(normKey(S.meta.lastDay));
+  Object.keys(S.tman||{}).forEach(k=>{if(S.tman[k]===0)set.delete(k);});
+  return set;}
+function fmtDur(sec,short){const m=Math.round(sec/60);if(m<=0)return short?'':'0분';const h=Math.floor(m/60),mm=m%60;
+  if(short)return h?h+'h'+(mm?pad2(mm):''):mm+'m';
+  return (h?h+'시간 ':'')+(mm||!h?mm+'분':'');}
+/* 자동 측정: 화면이 켜져 있고 최근 10분 안에 조작이 있으면 15초씩 누적 */
+const TIMER={last:Date.now(),acc:0,
+  init(){['pointerdown','keydown','wheel','touchstart','scroll'].forEach(ev=>window.addEventListener(ev,()=>{TIMER.last=Date.now();},{passive:true,capture:true}));
+    setInterval(()=>TIMER.tick(),15000);
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)TIMER.flush();else TIMER.last=Date.now();});},
+  tick(){if(!S||document.hidden)return;if(Date.now()-this.last>10*60*1000)return;
+    const o=tlogDay(dkey());o[DEV]=(o[DEV]||0)+15;this.acc+=15;
+    if(this.acc>=60)this.flush();
+    if(VIEW==='home'){const el=$('#calToday');if(el)el.textContent=fmtDur(daySec(dkey()))||'0분';}},
+  flush(){if(this.acc>0){this.acc=0;save();}}};
+
+let CALM=null, CALSEL=null;
+function renderCal(){
+  const box=$('#calbox'); if(!box)return;
+  const now=new Date(), tk=dkey(now);
+  if(!CALM)CALM=new Date(now.getFullYear(),now.getMonth(),1);
+  const y=CALM.getFullYear(), m=CALM.getMonth();
+  const days=studiedDays();
+  let mSec=0; const last=new Date(y,m+1,0).getDate();
+  for(let d=1;d<=last;d++)mSec+=daySec(dkey(new Date(y,m,d)));
+  const wk=['일','월','화','수','목','금','토'];
+  const first=new Date(y,m,1).getDay();
+  let cells=wk.map((w,i)=>`<div class="wd ${i===0?'sun':i===6?'sat':''}">${w}</div>`).join('');
+  for(let i=0;i<first;i++)cells+=`<div class="cday out"></div>`;
+  for(let d=1;d<=last;d++){
+    const k=dkey(new Date(y,m,d)), sec=daySec(k), on=days.has(k);
+    const lv=!on?'':sec>=180*60?'l4':sec>=90*60?'l3':sec>=30*60?'l2':'l1';
+    const fut=k>tk;
+    cells+=`<button class="cday ${lv} ${k===tk?'today':''} ${fut?'future':''} ${k===CALSEL?'sel':''}" data-day="${k}">${d}${sec>=60?`<span class="tm">${fmtDur(sec,true)}</span>`:''}</button>`;
+  }
+  const wkd=wk[now.getDay()];
+  let det='';
+  if(CALSEL){
+    const sec=daySec(CALSEL), man=(S.tman||{})[CALSEL], a=CALSEL.split('-');
+    det=`<div class="caldet"><span><b>${+a[1]}월 ${+a[2]}일</b> · ${days.has(CALSEL)?'학습함':'기록 없음'}${sec>=60?' · '+fmtDur(sec):''}${typeof man==='number'?' <span style="color:var(--faint)">(직접 입력)</span>':(autoSec(CALSEL)>=60?' <span style="color:var(--faint)">(자동 측정)</span>':'')}</span>
+      <span><button id="calEdit">학습 시간 입력</button>${typeof man==='number'?` <button id="calAuto">입력 지우기</button>`:''}</span></div>`;
+  }
+  box.innerHTML=`
+    <div class="calhead"><span class="td">${now.getFullYear()}. ${now.getMonth()+1}. ${now.getDate()}. (${wkd})</span>
+      <span style="font-size:12.5px;color:var(--muted)">시험까지 <b style="color:var(--kr);font-family:var(--mono)">D-${DDAY}</b></span></div>
+    <div class="calstats">
+      <div class="cs"><b style="color:var(--amber)">${S.meta.streak||0}일</b><span>연속 학습</span></div>
+      <div class="cs"><b style="color:var(--teal-d)">${S.meta.days||0}일</b><span>누적 학습</span></div>
+      <div class="cs"><b id="calToday">${fmtDur(daySec(tk))||'0분'}</b><span>오늘 학습 시간</span></div>
+      <div class="cs"><b>${fmtDur(mSec)||'0분'}</b><span>${m+1}월 총 학습 시간</span></div>
+    </div>
+    <div class="calnav"><button id="calPrev" aria-label="이전 달">‹</button><span class="mt">${y}년 ${m+1}월</span><button id="calNext" aria-label="다음 달">›</button></div>
+    <div class="calgrid">${cells}</div>
+    <div class="calleg">적음 <i style="background:var(--teal-wash)"></i><i style="background:#b9dbd6"></i><i style="background:#6fb5ab"></i><i style="background:var(--teal)"></i> 많음 · 날짜를 누르면 시간 입력</div>
+    ${det}`;
+  $('#calPrev').onclick=()=>{CALM=new Date(y,m-1,1);renderCal();};
+  $('#calNext').onclick=()=>{CALM=new Date(y,m+1,1);renderCal();};
+  box.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{CALSEL=(CALSEL===b.dataset.day?null:b.dataset.day);renderCal();});
+  if($('#calEdit'))$('#calEdit').onclick=()=>{
+    const cur=Math.round(daySec(CALSEL)/60);
+    const v=prompt('이 날 학습 시간을 분 단위로 입력하세요 (예: 90 = 1시간 30분)\n0을 넣으면 공부 안 한 날로 표시돼요.',cur||'');
+    if(v===null)return; const n=Math.max(0,Math.round(+String(v).trim()));
+    if(isNaN(n)){toast('숫자로 입력해 주세요');return;}
+    S.tman=S.tman||{}; S.tman[CALSEL]=n; save(); renderCal();};
+  if($('#calAuto'))$('#calAuto').onclick=()=>{delete S.tman[CALSEL]; save(); renderCal();};
+}
 
 /* ================= 회독(반복 학습) 추적 ================= */
 function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -1321,6 +1433,43 @@ function renderPlan(){
 }
 
 /* ================= CLOUD SYNC (Firebase) ================= */
+
+/* 두 기기의 진도 합치기 — 어느 쪽 기록도 버리지 않음 */
+function mergeState(a,b){
+  a=a||{}; b=b||{}; const o=Object.assign({},b,a);
+  const pickQ=(x,y)=>{if(!x)return y;if(!y)return x;
+    if((x.lastTs||0)!==(y.lastTs||0))return (x.lastTs||0)>(y.lastTs||0)?x:y;
+    return (x.seen||0)>=(y.seen||0)?x:y;};
+  ['q','gq'].forEach(k=>{const A=a[k]||{},B=b[k]||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]=pickQ(A[id],B[id])); o[k]=R;});
+  {const A=a.topics||{},B=b.topics||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>{const x=A[id]||{},y=B[id]||{};
+      const rr=[...new Set([...(Array.isArray(x.rounds)?x.rounds:[]),...(Array.isArray(y.rounds)?y.rounds:[])])]
+        .sort((p,q)=>dayNum(p)-dayNum(q));
+      const ck=Object.assign({},y.checks||{});Object.keys(x.checks||{}).forEach(c=>{ck[c]=!!(x.checks[c]||ck[c]);});
+      const xs=x.status||'todo',ys=y.status||'todo';
+      const nx=x.note||'',ny=y.note||'';
+      R[id]=Object.assign({},y,x,{status:xs!=='todo'?xs:ys,note:nx.length>=ny.length?nx:ny,checks:ck,rounds:rr});});
+    o.topics=R;}
+  {const A=a.plan||{},B=b.plan||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]={done:!!((A[id]&&A[id].done)||(B[id]&&B[id].done))});o.plan=R;}
+  {const A=a.mn||{},B=b.mn||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]=Math.max(A[id]||0,B[id]||0));o.mn=R;}
+  {const A=a.hl||{},B=b.hl||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(k=>{const seen=new Set(),out=[];
+      [...(A[k]||[]),...(B[k]||[])].forEach(h=>{const key=(h&&h.t)+'|'+(h&&h.n);if(!seen.has(key)){seen.add(key);out.push(h);}});R[k]=out;});o.hl=R;}
+  {const A=a.qmemo||{},B=b.qmemo||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(k=>{const x=A[k]||'',y=B[k]||'';R[k]=x.length>=y.length?x:y;});o.qmemo=R;}
+  {const A=a.tlog||{},B=b.tlog||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(k=>{const x=A[k]||{},y=B[k]||{},o2={};
+      new Set([...Object.keys(x),...Object.keys(y)]).forEach(dv=>o2[dv]=Math.max(+x[dv]||0,+y[dv]||0));R[k]=o2;});o.tlog=R;}
+  o.tman=Object.assign({},b.tman||{},a.tman||{});
+  {const A=a.meta||{},B=b.meta||{};
+    const ld=[A.lastDay,B.lastDay].filter(Boolean).sort((p,q)=>dayNum(q)-dayNum(p))[0]||null;
+    o.meta=Object.assign({},B,A,{streak:Math.max(A.streak||0,B.streak||0),answered:Math.max(A.answered||0,B.answered||0),lastDay:ld});
+    if(typeof A.days==='number'||typeof B.days==='number')o.meta.days=Math.max(A.days||0,B.days||0);}
+  return o;
+}
 const SYNC={on:false,db:null,ref:null,M:null,code:null,unsub:null,lastPush:0,applying:false,
   async connect(cfg,code){
     if(this.unsub){try{this.unsub();}catch(e){}this.unsub=null;}
@@ -1330,15 +1479,15 @@ const SYNC={on:false,db:null,ref:null,M:null,code:null,unsub:null,lastPush:0,app
     const app=initializeApp(cfg,'hub-'+Date.now());
     this.db=M.getFirestore(app); this.code=code; this.ref=M.doc(this.db,'hub',code);
     /* 연결 직후: 클라우드에 기록이 있으면 먼저 받아오기 (새 기기의 빈 진도가 클라우드를 덮어쓰지 않게) */
-    let adopted=false;
+    let merged=false;
     try{
       const snap0=await M.getDoc(this.ref);
       if(snap0.exists()){
-        const d0=snap0.data(); const localTs0=(S&&S._ts)||0;
-        if(d0&&d0.state&&(d0.ts||0)>=localTs0){
+        const d0=snap0.data(); let remote0=null; try{remote0=JSON.parse(d0.state);}catch(e){}
+        if(remote0){
           clearTimeout(saveT);
-          await STORE.set(KEY,d0.state); await load(); S._ts=d0.ts||0;
-          this.lastPush=d0.ts||0; adopted=true;
+          const m=mergeState(S,remote0); delete m._ts;
+          await STORE.set(KEY,JSON.stringify(m)); await load(); S._ts=Date.now(); merged=true;
         }
       }
     }catch(e){}
@@ -1357,8 +1506,8 @@ const SYNC={on:false,db:null,ref:null,M:null,code:null,unsub:null,lastPush:0,app
     this.on=true;
     localStorage.setItem('idpc_fb_cfg',JSON.stringify(cfg));
     localStorage.setItem('idpc_fb_code',code);
-    if(adopted){ try{ if(typeof VIEW!=='undefined')nav(VIEW); }catch(e){} toast('클라우드 진도를 불러왔어요'); }
-    else await this.push();
+    await this.push();
+    if(merged){ try{ if(typeof VIEW!=='undefined')nav(VIEW); }catch(e){} toast('이 기기와 클라우드 진도를 합쳤어요'); }
   },
   async push(){
     if(!this.ref||this.applying)return;
@@ -1389,6 +1538,15 @@ function renderSync(){
       <button class="cta alt" id="fbDisc">연결 해제</button>
     </div>
     <button class="cta alt" id="fbShare" style="margin-top:10px;width:100%;${SYNC.on?'':'display:none'}">📋 다른 기기 연결용 링크 복사</button>
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line)">
+      <div style="font-size:13px;font-weight:700;margin-bottom:6px">진도 백업</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">이 기기의 진도를 파일로 저장하거나, 저장한 파일을 불러와 <b>현재 진도와 합칠</b> 수 있어요. 불러오기는 기존 기록을 지우지 않아요.</div>
+      <div class="todo-actions">
+        <button class="cta alt" id="bkSave">💾 백업 파일 저장</button>
+        <button class="cta alt" id="bkLoad">📂 백업 불러와 합치기</button>
+      </div>
+      <input type="file" id="bkFile" accept=".json,application/json,text/plain" style="display:none">
+    </div>
     <details class="dgmore" style="margin-top:16px"><summary>Firebase 설정 방법 (최초 1회, 약 5분)</summary><div class="dgmore-b" style="font-size:13px;line-height:1.75">
       1. <a href="https://console.firebase.google.com" target="_blank" rel="noopener">console.firebase.google.com</a> 접속(구글 로그인) → <b>프로젝트 만들기</b> (이름 아무거나, 애널리틱스는 꺼도 됨).<br>
       2. 왼쪽 <b>빌드 → Firestore Database → 데이터베이스 만들기</b> → 위치 선택 → <b>테스트 모드로 시작</b>.<br>
@@ -1411,6 +1569,20 @@ function renderSync(){
     catch(e){ toast('연결 실패: '+((e&&e.message)||e)); }
   };
   $('#fbDisc').onclick=()=>{ SYNC.disconnect(); toast('연결 해제됨'); renderSync(); };
+  $('#bkSave').onclick=()=>{ try{
+      const d=new Date(), nm='감염약료_진도백업_'+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'_'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+'.json';
+      const blob=new Blob([JSON.stringify(S)],{type:'application/json'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nm; document.body.appendChild(a); a.click();
+      setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000); toast('백업 파일을 저장했어요');
+    }catch(e){toast('저장 실패: '+(e.message||e));} };
+  $('#bkLoad').onclick=()=>$('#bkFile').click();
+  $('#bkFile').onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(!f)return;
+    const rd=new FileReader(); rd.onload=async()=>{ try{
+        const other=JSON.parse(rd.result); if(!other||typeof other!=='object'||!other.q)throw new Error('진도 백업 파일이 아니에요');
+        clearTimeout(saveT); const m=mergeState(S,other); delete m._ts;
+        await STORE.set(KEY,JSON.stringify(m)); await load(); save(); toast('백업을 합쳤어요'); renderSync();
+      }catch(err){toast('불러오기 실패: '+(err.message||err));} };
+    rd.readAsText(f); e.target.value=''; };
   const _sh=$('#fbShare'); if(_sh)_sh.onclick=()=>{ try{ const cfg=JSON.parse(localStorage.getItem('idpc_fb_cfg')); const code=localStorage.getItem('idpc_fb_code'); if(!cfg||!code){toast('먼저 이 기기에서 연결하세요');return;} const link=location.href.split('#')[0]+'#sync='+btoa(encodeURIComponent(JSON.stringify({cfg,code}))); (navigator.clipboard?navigator.clipboard.writeText(link):Promise.reject()).then(()=>toast('링크 복사됨 · 아이패드 사파리에서 열면 자동 연결')).catch(()=>{prompt('아래 링크를 복사해 다른 기기에서 여세요',link);}); }catch(e){toast('복사 실패');} };
 }
 
@@ -1659,7 +1831,7 @@ const INK={
 
 
 /* boot */
-(async()=>{await load();try{const _h=(location.hash||'').match(/sync=([^&]+)/);if(_h){const _o=JSON.parse(decodeURIComponent(atob(_h[1])));if(_o&&_o.cfg&&_o.code){await SYNC.connect(_o.cfg,_o.code);history.replaceState(null,'',location.pathname+location.search);}}}catch(e){}if(!SYNC.on){const _c=localStorage.getItem('idpc_fb_cfg'),_k=localStorage.getItem('idpc_fb_code');if(_c&&_k){try{SYNC.connect(JSON.parse(_c),_k);}catch(e){}}}nav('home');try{INK.init();}catch(e){console.warn('ink',e);}})();
+(async()=>{await load();try{const _h=(location.hash||'').match(/sync=([^&]+)/);if(_h){const _o=JSON.parse(decodeURIComponent(atob(_h[1])));if(_o&&_o.cfg&&_o.code){await SYNC.connect(_o.cfg,_o.code);history.replaceState(null,'',location.pathname+location.search);}}}catch(e){}if(!SYNC.on){const _c=localStorage.getItem('idpc_fb_cfg'),_k=localStorage.getItem('idpc_fb_code');if(_c&&_k){try{SYNC.connect(JSON.parse(_c),_k);}catch(e){}}}nav('home');try{TIMER.init();}catch(e){}try{INK.init();}catch(e){console.warn('ink',e);}})();
 </script>
 </body>
 </html>
