@@ -508,10 +508,11 @@ function today(){const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+
 function daysSince(ts){return ts?Math.floor((Date.now()-ts)/86400000):9999;}
 function isDue(id){const s=S.q[id];return s.box===0||daysSince(s.lastTs)>=BOX_DAYS[s.box];}
 function dayNum(ds){const a=String(ds).split('-').map(Number);return Math.round(Date.UTC(a[0],a[1]-1,a[2])/86400000);}
+/* 누적 학습일 시작점: 시험(2026-12-19) 100일 전 = 2026-09-10, 그 사이 쉰 날 약 7일 제외 */
+const STUDY_START='2026-9-10', STUDY_OFF=7;
 function initDays(){ if(typeof S.meta.days==='number')return;
-  const set=new Set(); const add=ts=>{if(ts){const d=new Date(ts);set.add(d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate());}};
-  Object.values(S.q||{}).forEach(x=>add(x&&x.lastTs)); Object.values(S.gq||{}).forEach(x=>add(x&&x.lastTs));
-  S.meta.days=Math.max(set.size,S.meta.streak||0); }
+  const t=today(); const n=dayNum(t)-dayNum(STUDY_START)+(S.meta.lastDay===t?1:0)-STUDY_OFF;
+  S.meta.days=Math.max(n,0); }
 function bumpStreak(){initDays(); const t=today();if(S.meta.lastDay===t)return false;
   if(S.meta.lastDay){const gap=dayNum(t)-dayNum(S.meta.lastDay);
     S.meta.streak=gap===1?(S.meta.streak||0)+1:1;}else S.meta.streak=1;
