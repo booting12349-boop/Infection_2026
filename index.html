@@ -1320,6 +1320,19 @@ const SYNC={on:false,db:null,ref:null,M:null,code:null,unsub:null,lastPush:0,app
     this.M=M;
     const app=initializeApp(cfg,'hub-'+Date.now());
     this.db=M.getFirestore(app); this.code=code; this.ref=M.doc(this.db,'hub',code);
+    /* 연결 직후: 클라우드에 기록이 있으면 먼저 받아오기 (새 기기의 빈 진도가 클라우드를 덮어쓰지 않게) */
+    let adopted=false;
+    try{
+      const snap0=await M.getDoc(this.ref);
+      if(snap0.exists()){
+        const d0=snap0.data(); const localTs0=(S&&S._ts)||0;
+        if(d0&&d0.state&&(d0.ts||0)>=localTs0){
+          clearTimeout(saveT);
+          await STORE.set(KEY,d0.state); await load(); S._ts=d0.ts||0;
+          this.lastPush=d0.ts||0; adopted=true;
+        }
+      }
+    }catch(e){}
     this.unsub=M.onSnapshot(this.ref,snap=>{
       if(!snap.exists())return;
       const d=snap.data(); if(!d||!d.state)return;
@@ -1327,7 +1340,7 @@ const SYNC={on:false,db:null,ref:null,M:null,code:null,unsub:null,lastPush:0,app
       let remote; try{remote=JSON.parse(d.state);}catch(e){return;}
       const localTs=(S&&S._ts)||0;
       if((d.ts||0)>localTs){
-        this.applying=true; S=remote; save();
+        this.applying=true; clearTimeout(saveT); S=remote; this.lastPush=d.ts||0; STORE.set(KEY,JSON.stringify(S)).catch(()=>{});
         if(typeof VIEW!=='undefined'&&!(typeof SESS!=='undefined'&&SESS)){try{nav(VIEW);}catch(e){}}
         this.applying=false; toast('동기화됨 · 다른 기기의 최신 진도 반영');
       }
@@ -1335,7 +1348,8 @@ const SYNC={on:false,db:null,ref:null,M:null,code:null,unsub:null,lastPush:0,app
     this.on=true;
     localStorage.setItem('idpc_fb_cfg',JSON.stringify(cfg));
     localStorage.setItem('idpc_fb_code',code);
-    await this.push();
+    if(adopted){ try{ if(typeof VIEW!=='undefined')nav(VIEW); }catch(e){} toast('클라우드 진도를 불러왔어요'); }
+    else await this.push();
   },
   async push(){
     if(!this.ref||this.applying)return;
