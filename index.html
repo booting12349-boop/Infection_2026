@@ -507,9 +507,17 @@ function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;
 function today(){const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
 function daysSince(ts){return ts?Math.floor((Date.now()-ts)/86400000):9999;}
 function isDue(id){const s=S.q[id];return s.box===0||daysSince(s.lastTs)>=BOX_DAYS[s.box];}
-function bumpStreak(){const t=today();if(S.meta.lastDay===t)return;
-  if(S.meta.lastDay){const gap=Math.round((new Date(t)-new Date(S.meta.lastDay))/86400000);
-    S.meta.streak=gap===1?S.meta.streak+1:1;}else S.meta.streak=1; S.meta.lastDay=t;}
+function dayNum(ds){const a=String(ds).split('-').map(Number);return Math.round(Date.UTC(a[0],a[1]-1,a[2])/86400000);}
+function initDays(){ if(typeof S.meta.days==='number')return;
+  const set=new Set(); const add=ts=>{if(ts){const d=new Date(ts);set.add(d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate());}};
+  Object.values(S.q||{}).forEach(x=>add(x&&x.lastTs)); Object.values(S.gq||{}).forEach(x=>add(x&&x.lastTs));
+  S.meta.days=Math.max(set.size,S.meta.streak||0); }
+function bumpStreak(){initDays(); const t=today();if(S.meta.lastDay===t)return false;
+  if(S.meta.lastDay){const gap=dayNum(t)-dayNum(S.meta.lastDay);
+    S.meta.streak=gap===1?(S.meta.streak||0)+1:1;}else S.meta.streak=1;
+  S.meta.lastDay=t; S.meta.days=(S.meta.days||0)+1; return true;}
+function markVisit(){try{if(S&&S.meta&&bumpStreak())save();}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)markVisit();});
 function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:9px;font-size:13.5px;z-index:50;box-shadow:var(--shadow);max-width:90%';
   document.body.appendChild(t);setTimeout(()=>t.remove(),2600);}
@@ -517,7 +525,7 @@ function toast(m){const t=document.createElement('div');t.textContent=m;
 /* ================= router ================= */
 let VIEW='home';
 let DIGVIEW=null;
-function nav(v){VIEW=v;SESS=null;
+function nav(v){VIEW=v;SESS=null;markVisit();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else renderDrillHome();
   window.scrollTo(0,0);
@@ -721,7 +729,7 @@ function renderHome(){
       <button class="cta alt" id="goCurr">출제범위 훑기 <span class="n">${c.done}/${c.total}</span></button>
     </div>
     <div class="streakline"><span class="dot" style="background:var(--amber)"></span>
-      연속 학습 <b style="font-family:var(--mono)">${S.meta.streak}</b>일 · 12월 시험까지 매일 한 칸씩</div>
+      연속 학습 <b style="font-family:var(--mono)">${S.meta.streak}</b>일 · 누적 <b style="font-family:var(--mono)">${S.meta.days||0}</b>일 · 12월 시험까지 매일 한 칸씩</div>
   </div>
 
   <div class="card todaybox">
@@ -1079,7 +1087,7 @@ function renderDrillHome(){
       <div class="stat"><div class="n">${d.answered}<span style="font-size:13px;color:var(--faint)">/${BANK.length}</span></div><div class="l">한 번이라도 푼 문제</div></div>
       <div class="stat"><div class="n">${d.acc}<span style="font-size:13px;color:var(--faint)">%</span></div><div class="l">누적 정답률</div></div>
       <div class="stat"><div class="n" style="color:var(--teal-d)">${d.mastered}</div><div class="l">외운 문제 (Box 5)</div></div>
-      <div class="stat"><div class="n" style="color:var(--amber)">${S.meta.streak}</div><div class="l">연속 학습일</div></div>
+      <div class="stat"><div class="n" style="color:var(--amber)">${S.meta.streak}</div><div class="l">연속 학습일 · 누적 ${S.meta.days||0}일</div></div>
     </div>
     <div class="eyebrow" style="margin-top:2px">암기 단계 · Box 1→5 (맞으면↑ 틀리면 Box1)</div>
     <div class="masterrow">${[1,2,3,4,5].map(i=>{const sh=['#cfd8d6','#9fc4bd','#5fb3a7','#2f998c','#0f7d72'][i-1];const w=boxes[i]/BANK.length*100;
