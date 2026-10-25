@@ -1300,7 +1300,17 @@ function renderDrillHome(){
   if(newIds.length)lvlWrap.appendChild(mkLvl('신규 추가',newIds,'border-color:var(--bad);color:var(--bad);font-weight:700'));
   [[1,'하'],[2,'중'],[3,'상']].forEach(([lv,t])=>{
     const ids=GUIDEQ.filter(g=>g.level===lv).map(g=>g.id);
-    lvlWrap.appendChild(mkLvl('난이도 '+t,ids,`border-color:${LV[lv].c};color:${LV[lv].c}`));
+    if(!ids.length)return;
+    /* 안 푼 문제가 남아 있으면 안 푼 것만, 다 풀었으면 전체 */
+    const left=ids.filter(id=>!((S.gq[id]||{}).seen>0));
+    const b=document.createElement('button');
+    b.innerHTML=left.length
+      ? `난이도 ${t} <b style="font-family:var(--mono)">${left.length}/${ids.length}</b>`
+      : `난이도 ${t} <b style="font-family:var(--mono)">${ids.length}</b>`;
+    b.title=left.length?`아직 안 푼 ${left.length}문항만 출제`:'모두 풀었어요 — 전체 문항 출제';
+    b.style.cssText=`border-color:${LV[lv].c};color:${LV[lv].c}`;
+    b.onclick=()=>startSession(left.length?left:ids,'가이드라인 · 난이도 '+t+(left.length?' (안 푼 문제)':''),'guide');
+    lvlWrap.appendChild(b);
   });
 
   const gm=$('#gqModes');
