@@ -469,6 +469,22 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
 .srcfold[open]>summary::before{content:'▾ '}
 .roundbox .tline{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);font-size:11.5px;color:var(--muted)}
 .roundbox .tline b{font-family:var(--mono);color:var(--ink)}
+.mk-note{font-size:13.5px;line-height:1.7;color:var(--muted);margin:6px 0}
+.mk-resume{margin:12px 0;padding:12px 14px;border:1px solid var(--teal);border-radius:10px;background:var(--teal-wash);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.mk-opt{display:inline-flex;gap:6px;align-items:center;font-size:13.5px;margin-top:10px}
+.mk-hist{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+.mk-hist th,.mk-hist td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left}
+.mk-num{font-family:var(--mono);font-size:12.5px;margin:4px 0 8px}
+.mk-clock{font-family:var(--mono);font-weight:700}.mk-clock.low{color:var(--bad)}
+.mk-gridwrap{margin-top:14px}.mk-gridwrap summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(36px,1fr));gap:5px;margin-top:8px}
+.mk-cell{font-family:var(--mono);font-size:12px;padding:6px 0;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer}
+.mk-cell.a{background:#dfe3e1}.mk-cell.f{background:#fde68a}.mk-cell.cur{outline:2px solid var(--teal)}
+.mk-submit{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px dashed var(--line)}
+.mk-score{font-size:30px;font-weight:800;margin:6px 0}.mk-score small{font-size:14px;font-weight:600}
+.mk-bar{display:inline-block;width:90px;height:7px;background:var(--line);border-radius:4px;vertical-align:middle;overflow:hidden}.mk-bar i{display:block;height:100%}
+.mk-wrong{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}.mk-wrong summary{cursor:pointer;font-size:13.5px;line-height:1.6}
+.mk-ch{font-size:13.5px;line-height:1.7;padding-left:22px}.mk-ch li.ok{color:var(--ok);font-weight:700}.mk-ch li.no{color:var(--bad);text-decoration:line-through}
 </style>
 </head>
 <body>
@@ -479,6 +495,7 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
     <button data-v="curriculum">출제범위</button>
     <button data-v="mnem">암기</button>
     <button data-v="drill">케이스 드릴</button>
+    <button data-v="mock">모의고사</button>
     <button data-v="plan">학습 일정</button>
     <button data-v="sync">동기화</button>
   </nav>
@@ -564,12 +581,151 @@ function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:9px;font-size:13.5px;z-index:50;box-shadow:var(--shadow);max-width:90%';
   document.body.appendChild(t);setTimeout(()=>t.remove(),2600);}
 
+/* ================= 모의고사 ================= */
+/* 형식 근거: 한국병원약사회 전문약사 자격시험 관리시스템 '시험 안내'(2026 제4회)
+   공통과목 객관식 20문항 + 전문과목 객관식 80문항 = 100문항(각 1점), 15:00–18:00(180분), 합격 = 총점 60% 이상 */
+const MOCK_FMT={
+  full:{label:'실전 모의고사',common:20,spec:80,min:180},
+  half:{label:'하프 모의고사',common:10,spec:40,min:90},
+};
+function mockKey(k,id){return k+':'+id;}
+function mockItem(key){const [k,...r]=key.split(':');const id=r.join(':');
+  return k==='g'?{k,id,it:GQ_BY_ID[id],s:S.gq[id]}:{k,id:+id,it:BANK.find(x=>x.id===+id),s:S.q[+id]};}
+function mockTopicOf(key){const m=mockItem(key);if(m.k==='g')return m.it.topic;
+  const t=TOPICS.find(t=>t.accp.includes(m.id));return t?t.id:null;}
+function mockPool(tid){const p=[];(GQ_BY_TOPIC[tid]||[]).forEach(g=>p.push(mockKey('g',g.id)));
+  (TOPIC_BY[tid]?TOPIC_BY[tid].accp:[]).forEach(id=>{if(BANK.find(b=>b.id===id))p.push(mockKey('c',id));});return p;}
+function mockBuild(fmt,opt){
+  const F=MOCK_FMT[fmt];
+  const prefer=arr=>{arr=shuffle(arr.slice());if(!opt.fresh)return arr;
+    const seen=x=>{const s=mockItem(x).s;return s&&s.seen>0;};return arr.filter(x=>!seen(x)).concat(arr.filter(seen));};
+  const common=prefer(mockPool('biostat')).slice(0,F.common);
+  // 전문과목: 영역별 배분이 공개되지 않아 영역마다 고르게 뽑고(라운드로빈) 남는 자리는 무작위로 채움
+  const specT=TOPICS.filter(t=>t.id!=='biostat').map(t=>({id:t.id,pool:prefer(mockPool(t.id))})).filter(t=>t.pool.length);
+  const spec=[];shuffle(specT);
+  while(spec.length<F.spec&&specT.some(t=>t.pool.length)){
+    for(const t of specT){if(spec.length>=F.spec)break;if(t.pool.length)spec.push(t.pool.shift());}}
+  return {fmt,ids:common.concat(shuffle(spec)),nCommon:common.length,ans:{},flag:{},pos:0,
+    start:Date.now(),limit:F.min*60*1000,done:false};
+}
+let MOCKT=null;
+function renderMockHome(){
+  clearInterval(MOCKT);S.mock=S.mock||{hist:[]};const cur=S.mock.cur;
+  const hist=(S.mock.hist||[]).slice(-8).reverse();
+  const pc=mockPool('biostat').length, ps=TOPICS.filter(t=>t.id!=='biostat').reduce((a,t)=>a+mockPool(t.id).length,0);
+  app().innerHTML=`<div class="card" style="padding:22px">
+    <h2 style="margin:0 0 6px;font-size:20px">모의고사</h2>
+    <p class="mk-note">실제 시험 형식(2026 제4회): <b>공통과목 20문항 + 전문과목 80문항 = 100문항</b>, 각 1점, <b>180분</b>(15:00–18:00), 총점 <b>60점 이상</b> 합격.
+    문제은행(가이드라인 자가점검 + ACCP 케이스)에서 무작위로 뽑아요. 전문과목은 영역별 배분이 공개되지 않아 ${TOPICS.filter(t=>t.id!=='biostat').length}개 영역에서 고르게 뽑아요.</p>
+    <p class="mk-note" style="color:var(--faint)">현재 문제은행 · 공통 ${pc}문항 / 전문 ${ps}문항 · 출처: 한국병원약사회 전문약사 자격시험 관리시스템 시험 안내</p>
+    ${cur&&!cur.done?`<div class="mk-resume"><b>진행 중인 ${MOCK_FMT[cur.fmt].label}</b> · ${Object.keys(cur.ans).length}/${cur.ids.length} 응답
+      <button class="btn btn-primary" id="mkResume">이어서 풀기</button> <button class="btn btn-ghost" id="mkDiscard">버리기</button></div>`:''}
+    <label class="mk-opt"><input type="checkbox" id="mkFresh" checked> 안 풀어본 문제 먼저 뽑기</label>
+    <div class="todo-actions" style="margin-top:12px">
+      <button class="cta" data-mk="full">실전 100문항 · 180분</button>
+      <button class="cta alt" data-mk="half">하프 50문항 · 90분</button>
+    </div>
+    ${hist.length?`<div class="dg-h">최근 기록</div><table class="mk-hist"><thead><tr><th>날짜</th><th>형식</th><th>점수</th><th>공통</th><th>전문</th><th>소요</th></tr></thead><tbody>
+      ${hist.map(h=>`<tr><td>${new Date(h.ts).toLocaleDateString('ko-KR')}</td><td>${MOCK_FMT[h.fmt].label}</td><td><b style="color:${h.pct>=60?'var(--ok)':'var(--bad)'}">${h.score}/${h.total} (${h.pct}%)</b></td><td>${h.c}/${h.cn}</td><td>${h.sp}/${h.sn}</td><td>${h.min}분</td></tr>`).join('')}
+      </tbody></table>`:''}
+  </div>`;
+  app().querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>{
+    if(cur&&!cur.done&&!b.dataset.ok){b.dataset.ok=1;b.textContent='진행 중인 시험을 버리고 새로 시작하려면 한 번 더 누르세요';return;}
+    S.mock.cur=mockBuild(b.dataset.mk,{fresh:$('#mkFresh').checked});save();renderMockQ();});
+  if($('#mkResume'))$('#mkResume').onclick=()=>renderMockQ();
+  if($('#mkDiscard'))$('#mkDiscard').onclick=()=>{delete S.mock.cur;save();renderMockHome();};
+}
+function mockLeft(c){return Math.max(0,c.limit-(Date.now()-c.start));}
+function fmtClock(ms){const s=Math.ceil(ms/1000),h=s/3600|0,m=(s%3600)/60|0,x=s%60;return `${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`;}
+function renderMockQ(){
+  const c=S.mock.cur;if(!c){renderMockHome();return;}
+  clearInterval(MOCKT);
+  const key=c.ids[c.pos],m=mockItem(key),it=m.it,g=m.k==='g';
+  const stem=g?it.q:(it.stemKo||it.stem), ch=g?it.choices:(it.choicesKo||it.choices);
+  const panel=(!g&&it.panel)?`<div class="qpanel">${it.panel.map(r=>`<div class="row"><div class="k">${esc(r[0])}</div><div class="v">${esc(r[1])}</div></div>`).join('')}</div>`:'';
+  const tbl=(!g&&it.tables)?it.tables.map(renderDstTable).join(''):'';
+  const ask=(!g&&it.ask)?`<p class="askline">${esc(it.ask)}</p>`:'';
+  const sec=c.pos<c.nCommon?'공통과목':'전문과목';
+  const grid=c.ids.map((k,i)=>`<button class="mk-cell ${c.ans[k]?'a':''} ${c.flag[k]?'f':''} ${i===c.pos?'cur':''}" data-go="${i}">${i+1}</button>`).join('');
+  const nA=Object.keys(c.ans).length;
+  app().innerHTML=`<div class="card qwrap"><div class="qbody">
+    <div class="progress"><span class="ct">${MOCK_FMT[c.fmt].label} · ${sec}</span>
+      <div class="bar"><i style="width:${nA/c.ids.length*100}%"></i></div>
+      <span class="ct mk-clock" id="mkClock">${fmtClock(mockLeft(c))}</span></div>
+    <div class="mk-num">${c.pos+1} / ${c.ids.length} <span style="color:var(--faint)">· 응답 ${nA}</span></div>
+    <p class="stem">${esc(stem)}</p>${panel}${tbl}${ask}
+    <div class="choices" id="choices">${ch.map((x,i)=>`<button class="choice ${c.ans[key]===i+1?'sel':''}" data-i="${i+1}"><span class="k">${KO[i+1]}</span><span>${esc(x)}</span><span class="mark"></span></button>`).join('')}</div>
+    <div class="qfooter">
+      <button class="flag ${c.flag[key]?'on':''}" id="mkFlag">★ ${c.flag[key]?'나중에 보기':'표시'}</button>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" id="mkPrev" ${c.pos?'':'disabled'}>이전</button>
+      <button class="btn btn-primary" id="mkNext">${c.pos+1<c.ids.length?'다음':'제출 화면'}</button></div>
+    <details class="mk-gridwrap"><summary>문항 번호판 (회색=응답, 노랑=표시)</summary><div class="mk-grid">${grid}</div></details>
+    <div class="mk-submit" id="mkSubmitBox"><button class="btn btn-ghost" id="mkPause">나중에 이어 풀기</button>
+      <button class="btn" id="mkSubmit" style="background:var(--bad);color:#fff">제출하고 채점</button></div>
+  </div></div>`;
+  $('#choices').querySelectorAll('.choice').forEach(b=>b.onclick=()=>{c.ans[key]=+b.dataset.i;save();
+    $('#choices').querySelectorAll('.choice').forEach(x=>x.classList.toggle('sel',x===b));
+    const cell=app().querySelector(`.mk-cell[data-go="${c.pos}"]`);if(cell)cell.classList.add('a');});
+  $('#mkFlag').onclick=()=>{c.flag[key]=!c.flag[key];save();renderMockQ();};
+  $('#mkPrev').onclick=()=>{c.pos--;save();renderMockQ();};
+  $('#mkNext').onclick=()=>{if(c.pos+1<c.ids.length){c.pos++;save();renderMockQ();}else $('#mkSubmitBox').scrollIntoView({behavior:'smooth'});};
+  app().querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{c.pos=+b.dataset.go;save();renderMockQ();});
+  $('#mkPause').onclick=()=>{save();renderMockHome();};
+  $('#mkSubmit').onclick=()=>{const left=c.ids.length-Object.keys(c.ans).length;const b=$('#mkSubmit');
+    if(left&&!b.dataset.ok){b.dataset.ok=1;b.textContent=`미응답 ${left}문항 — 그래도 제출하려면 한 번 더`;return;}
+    mockGrade();};
+  window.scrollTo(0,0);
+  MOCKT=setInterval(()=>{const el=$('#mkClock');if(!el||!S.mock.cur){clearInterval(MOCKT);return;}
+    const l=mockLeft(c);el.textContent=fmtClock(l);el.classList.toggle('low',l<10*60*1000);
+    if(l<=0){clearInterval(MOCKT);toast('시간 종료 — 자동 제출했어요');mockGrade();}},1000);
+}
+function mockGrade(){
+  clearInterval(MOCKT);const c=S.mock.cur;if(!c)return;
+  let score=0,cc=0;const byT={};const res=[];
+  c.ids.forEach((key,i)=>{const m=mockItem(key),a=c.ans[key],ok=a===m.it.answer;
+    if(ok){score++;if(i<c.nCommon)cc++;}
+    const t=mockTopicOf(key)||'etc';byT[t]=byT[t]||{n:0,c:0};byT[t].n++;if(ok)byT[t].c++;
+    if(a&&m.s){const s=m.s;s.seen++;   // 응답한 문항만 간격반복·오답노트에 반영
+      if(ok){s.correct++;s.box=Math.min(5,(s.box||0)+1);s.last='c';if(s.wl===1){s.ws=(s.ws||0)+1;if(s.ws>=WRONG_EXIT){s.wl=0;s.ws=0;}}}
+      else{s.wrong++;s.box=1;s.last='x';s.wl=1;s.ws=0;}
+      s.lastTs=Date.now();S.meta.answered++;}
+    res.push({key,a,ok});});
+  const total=c.ids.length,min=Math.round((Date.now()-c.start)/60000);
+  const rec={ts:Date.now(),fmt:c.fmt,score,total,pct:Math.round(score/total*100),c:cc,cn:c.nCommon,sp:score-cc,sn:total-c.nCommon,min,byT,res};
+  S.mock.hist=S.mock.hist||[];S.mock.hist.push({ts:rec.ts,fmt:rec.fmt,score,total,pct:rec.pct,c:cc,cn:rec.cn,sp:rec.sp,sn:rec.sn,min});
+  if(S.mock.hist.length>30)S.mock.hist=S.mock.hist.slice(-30);
+  S.mock.last=rec;delete S.mock.cur;bumpStreak();save();renderMockResult(rec);
+}
+function renderMockResult(r){
+  const pass=r.pct>=60;
+  const rows=Object.entries(r.byT).sort((a,b)=>(a[1].c/a[1].n)-(b[1].c/b[1].n)).map(([t,v])=>{const p=Math.round(v.c/v.n*100);
+    return `<tr><td>${esc(TOPIC_BY[t]?TOPIC_BY[t].name:t)}</td><td>${v.c}/${v.n}</td><td><span class="mk-bar"><i style="width:${p}%;background:${p>=60?'var(--ok)':'var(--bad)'}"></i></span> ${p}%</td></tr>`;}).join('');
+  const wrong=r.res.map((x,i)=>({...x,i})).filter(x=>!x.ok);
+  const wl=wrong.map(x=>{const m=mockItem(x.key),it=m.it,g=m.k==='g';
+    const ch=g?it.choices:(it.choicesKo||it.choices);
+    const ex=g?it.explain:((it.rationalesKo||it.rationales)[it.answer-1]||'');
+    return `<details class="mk-wrong"><summary><b>${x.i+1}.</b> ${esc((g?it.q:(it.stemKo||it.stem)).slice(0,90))}… <span style="color:var(--bad)">${x.a?'내 답 '+KO[x.a]:'미응답'}</span> · 정답 ${KO[it.answer]}</summary>
+      <p class="stem" style="font-size:14px">${esc(g?it.q:(it.stemKo||it.stem))}</p>
+      <ol type="A" class="mk-ch">${ch.map((c,i)=>`<li class="${i+1===it.answer?'ok':i+1===x.a?'no':''}">${esc(c)}</li>`).join('')}</ol>
+      <div class="rat c"><span class="rt">${esc(ex)}</span></div>
+      <div class="rub" style="margin-top:6px">출처 · ${esc(g?it.src:it.ref)}</div></details>`;}).join('');
+  app().innerHTML=`<div class="card" style="padding:22px">
+    <h2 style="margin:0 0 4px;font-size:20px">${MOCK_FMT[r.fmt].label} 결과</h2>
+    <div class="mk-score" style="color:${pass?'var(--ok)':'var(--bad)'}">${r.score} / ${r.total} <small>(${r.pct}%) · ${pass?'합격선 이상':'합격선(60%) 미만'}</small></div>
+    <p class="mk-note">공통과목 ${r.c}/${r.cn} · 전문과목 ${r.sp}/${r.sn} · 소요 ${r.min}분 · 틀리거나 비운 ${wrong.length}문항 중 응답한 문제는 오답노트에 들어갔어요.</p>
+    <div class="dg-h">영역별 정답률 (낮은 순)</div><table class="mk-hist"><tbody>${rows}</tbody></table>
+    <div class="dg-h">틀린 문제 ${wrong.length}</div>${wl||'<p class="mk-note">모두 맞혔어요.</p>'}
+    <div class="todo-actions" style="margin-top:16px"><button class="cta" id="mkAgain">모의고사 홈</button></div></div>`;
+  $('#mkAgain').onclick=()=>renderMockHome();window.scrollTo(0,0);
+}
+
 /* ================= router ================= */
 let VIEW='home';
 let DIGVIEW=null;
-function nav(v){VIEW=v;SESS=null;if(v!=='drill')tSet(null);markVisit();
+function nav(v){VIEW=v;SESS=null;clearInterval(MOCKT);if(v!=='drill')tSet(null);markVisit();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else renderDrillHome();
+  if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else if(v==='mock')renderMockHome(); else renderDrillHome();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>nav(b.dataset.v));
@@ -1545,6 +1701,11 @@ function mergeState(a,b){
       [...(A[k]||[]),...(B[k]||[])].forEach(h=>{const key=(h&&h.t)+'|'+(h&&h.n);if(!seen.has(key)){seen.add(key);out.push(h);}});R[k]=out;});o.hl=R;}
   {const A=a.qmemo||{},B=b.qmemo||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(k=>{const x=A[k]||'',y=B[k]||'';R[k]=x.length>=y.length?x:y;});o.qmemo=R;}
+  {const A=a.mock||{},B=b.mock||{},seen=new Set(),hist=[];
+    [...(A.hist||[]),...(B.hist||[])].sort((p,q)=>p.ts-q.ts).forEach(x=>{if(!seen.has(x.ts)){seen.add(x.ts);hist.push(x);}});
+    const cur=(A.cur&&B.cur)?((A.cur.start>=B.cur.start)?A.cur:B.cur):(A.cur||B.cur);
+    const last=(A.last&&B.last)?((A.last.ts>=B.last.ts)?A.last:B.last):(A.last||B.last);
+    o.mock={hist:hist.slice(-30)};if(cur)o.mock.cur=cur;if(last)o.mock.last=last;}
   {const A=a.tlog||{},B=b.tlog||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(k=>{const x=A[k]||{},y=B[k]||{},o2={};
       new Set([...Object.keys(x),...Object.keys(y)]).forEach(dv=>o2[dv]=Math.max(+x[dv]||0,+y[dv]||0));R[k]=o2;});o.tlog=R;}
