@@ -2090,32 +2090,125 @@ const INK={
 
   var lastSent = 0;
 
-  function collect() {
+  function areaMap() {
+    var m = {};
+    try {
+      if (typeof BANK !== "undefined" && BANK.length) {
+        for (var i = 0; i < BANK.length; i++) {
+          var b = BANK[i];
+          if (b && b.id != null) m[String(b.id)] = b.sectionKo || b.section || "미분류";
+        }
+      }
+    } catch (e) {}
+    try {
+      if (typeof GUIDEQ !== "undefined" && GUIDEQ.length) {
+        for (var j = 0; j < GUIDEQ.length; j++) {
+          var g = GUIDEQ[j];
+          if (g && g.id != null) m[String(g.id)] = g.tname || g.topic || "미분류";
+        }
+      }
+    } catch (e) {}
+    return m;
+  }
+
+  function row(area) {
+    return { 영역: area, 총문항: 0, 푼문항: 0, 정답: 0, 오답: 0, 안푼: 0, 약한문항: 0, 정답률: "" };
+  }
+
+  function summarize() {
+    var hub = {};
+    try { hub = JSON.parse(localStorage.getItem("idpc_hub_v1") || "{}"); } catch (e) { return null; }
+    var q = hub.q || {};
+    var map = areaMap();
+    var agg = {};
+    var id, a;
+
+    for (id in map) {
+      a = map[id];
+      if (!agg[a]) agg[a] = row(a);
+      agg[a].총문항++;
+    }
+
+    var total = { 총문항: 0, 푼문항: 0, 정답: 0, 오답: 0, 약한문항: 0 };
+    var lastTs = 0;
+    var day = 24 * 60 * 60 * 1000;
+    var now = Date.now();
+    var 최근24h = 0, 최근7일 = 0;
+
+    for (id in q) {
+      var r = q[id] || {};
+      a = map[id] || "미분류";
+      if (!agg[a]) agg[a] = row(a);
+      var o = agg[a];
+      if (r.seen) o.푼문항++;
+      o.정답 += r.correct || 0;
+      o.오답 += r.wrong || 0;
+      if ((r.wrong || 0) > (r.correct || 0) || r.flag) o.약한문항++;
+      if (r.lastTs) {
+        if (r.lastTs > lastTs) lastTs = r.lastTs;
+        if (now - r.lastTs <= day) 최근24h++;
+        if (now - r.lastTs <= 7 * day) 최근7일++;
+      }
+    }
+
+    var rows = [];
+    for (a in agg) {
+      var x = agg[a];
+      x.안푼 = Math.max(0, x.총문항 - x.푼문항);
+      var tried = x.정답 + x.오답;
+      x.정답률 = tried ? Math.round((x.정답 * 100) / tried) : "";
+      total.총문항 += x.총문항;
+      total.푼문항 += x.푼문항;
+      total.정답 += x.정답;
+      total.오답 += x.오답;
+      total.약한문항 += x.약한문항;
+      rows.push(x);
+    }
+
+    rows.sort(function (p, n) {
+      var pr = p.정답률 === "" ? 999 : p.정답률;
+      var nr = n.정답률 === "" ? 999 : n.정답률;
+      return pr - nr;
+    });
+
+    var t = total.정답 + total.오답;
+    return {
+      at: new Date().toISOString(),
+      전체: {
+        총문항: total.총문항,
+        푼문항: total.푼문항,
+        안푼: Math.max(0, total.총문항 - total.푼문항),
+        정답: total.정답,
+        오답: total.오답,
+        정답률: t ? Math.round((total.정답 * 100) / t) : "",
+        약한문항: total.약한문항,
+        최근풀이: lastTs ? new Date(lastTs).toISOString() : "",
+        최근24시간: 최근24h,
+        최근7일: 최근7일
+      },
+      요약: rows
+    };
+  }
+
+  function rawDump() {
     var store = {};
     try {
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
         store[k] = localStorage.getItem(k);
       }
-    } catch (e) {
-      return null;
-    }
-    try {
-      return JSON.stringify({
-        at: new Date().toISOString(),
-        href: location.href,
-        localStorage: store
-      });
-    } catch (e) {
-      return null;
-    }
+    } catch (e) { return null; }
+    return store;
   }
 
   function send(force) {
     var now = Date.now();
     if (!force && now - lastSent < 60000) return;
-    var payload = collect();
-    if (!payload) return;
+    var s = summarize();
+    if (!s) return;
+    s.원본 = rawDump();
+    var payload;
+    try { payload = JSON.stringify(s); } catch (e) { return; }
     lastSent = now;
     try {
       fetch(ENDPOINT, {
@@ -2127,7 +2220,7 @@ const INK={
     } catch (e) {}
   }
 
-  window.addEventListener("load", function () { send(true); });
+  window.addEventListener("load", function () { setTimeout(function () { send(true); }, 1500); });
 
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") send(true);
