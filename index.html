@@ -610,9 +610,40 @@ function mockBuild(fmt,opt){
     start:Date.now(),limit:F.min*60*1000,done:false};
 }
 let MOCKT=null;
+/* 모의고사 누적 오답노트: 지금까지 모든 모의고사에서 틀리거나 비운 문항을 파트(공통/전문)·영역별로 묶음.
+   '남음' = 아직 오답노트(wl)에 있는 문항, 드릴에서 5연속 맞히면 졸업해 빠짐 */
+function mockWrongBook(){
+  const hs=(S.mock&&S.mock.hist||[]).filter(h=>h.res);
+  if(!hs.length)return {html:'',groups:{}};
+  const seen={},acc={};
+  hs.forEach(h=>{Object.entries(h.byT||{}).forEach(([t,v])=>{acc[t]=acc[t]||{n:0,c:0};acc[t].n+=v.n;acc[t].c+=v.c;});
+    h.res.forEach(x=>{if(!x.ok)seen[x.key]=(seen[x.key]||0)+1;});});
+  const groups={};
+  Object.keys(seen).forEach(key=>{const m=mockItem(key);if(!m.it)return;
+    const t=mockTopicOf(key)||'etc';const part=t==='biostat'?'공통':'전문';
+    const g=groups[t]=groups[t]||{name:(TOPIC_BY[t]?TOPIC_BY[t].name:t),part,allG:[],allC:[],leftG:[],leftC:[],times:0};
+    const left=m.s&&m.s.wl===1; g.times+=seen[key];
+    (m.k==='g'?g.allG:g.allC).push(m.id); if(left)(m.k==='g'?g.leftG:g.leftC).push(m.id);});
+  const order=Object.entries(groups).sort((a,b)=>(a[1].part===b[1].part?0:a[1].part==='공통'?-1:1)||((b[1].leftG.length+b[1].leftC.length)-(a[1].leftG.length+a[1].leftC.length)));
+  const nAll=Object.keys(seen).length, nLeft=order.reduce((a,[,g])=>a+g.leftG.length+g.leftC.length,0);
+  const row=([t,g])=>{const left=g.leftG.length+g.leftC.length,all=g.allG.length+g.allC.length,a=acc[t];
+    const p=a&&a.n?Math.round(a.c/a.n*100):null;
+    return `<tr><td>${esc(g.name)}</td><td>${p==null?'-':`<b style="color:${p>=60?'var(--ok)':'var(--bad)'}">${p}%</b> <span style="color:var(--faint)">(${a.c}/${a.n})</span>`}</td>
+      <td>${left?`<b style="color:var(--bad)">${left}</b>`:'0'} / ${all}</td>
+      <td style="white-space:nowrap">${left?`<button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" data-mwt="${t}">남은 것</button>`:''}
+        <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" data-mwt="${t}" data-all="1">전체</button></td></tr>`;};
+  const sec=part=>{const rs=order.filter(([,g])=>g.part===part);return rs.length?`<tr><td colspan="4" style="font-weight:700;padding-top:10px">${part}과목</td></tr>`+rs.map(row).join(''):'';};
+  const html=`<div class="dg-h">모의고사 오답노트 · 누적 ${hs.length}회</div>
+    <p class="mk-note">지금까지 모의고사에서 틀리거나 비운 ${nAll}문항 중 <b>${nLeft}문항</b>이 아직 오답노트에 남아 있어요. 드릴에서 5연속 맞히면 빠져요. 정답률은 모의고사에서만 집계한 값이에요.</p>
+    <table class="mk-hist"><thead><tr><th>영역</th><th>모의고사 정답률</th><th>남음/틀린 문항</th><th></th></tr></thead><tbody>${sec('공통')}${sec('전문')}</tbody></table>`;
+  return {html,groups};
+}
 function renderMockHome(){
   clearInterval(MOCKT);S.mock=S.mock||{hist:[]};const cur=S.mock.cur;
-  const hist=(S.mock.hist||[]).slice(-8).reverse();
+  S.mock.hist=S.mock.hist||[];
+  if(S.mock.last&&S.mock.last.res){const h=S.mock.hist.find(x=>x.ts===S.mock.last.ts);if(h&&!h.res){h.byT=S.mock.last.byT;h.res=S.mock.last.res;save();}}
+  const hist=S.mock.hist.slice(-8).reverse();
+  const MW=mockWrongBook();
   const pc=mockPool('biostat').length, ps=TOPICS.filter(t=>t.id!=='biostat').reduce((a,t)=>a+mockPool(t.id).length,0);
   app().innerHTML=`<div class="card" style="padding:22px">
     <h2 style="margin:0 0 6px;font-size:20px">모의고사</h2>
@@ -627,9 +658,14 @@ function renderMockHome(){
       <button class="cta alt" data-mk="half">하프 50문항 · 90분</button>
     </div>
     ${hist.length?`<div class="dg-h">최근 기록</div><table class="mk-hist"><thead><tr><th>날짜</th><th>형식</th><th>점수</th><th>공통</th><th>전문</th><th>소요</th></tr></thead><tbody>
-      ${hist.map(h=>`<tr><td>${new Date(h.ts).toLocaleDateString('ko-KR')}</td><td>${MOCK_FMT[h.fmt].label}</td><td><b style="color:${h.pct>=60?'var(--ok)':'var(--bad)'}">${h.score}/${h.total} (${h.pct}%)</b></td><td>${h.c}/${h.cn}</td><td>${h.sp}/${h.sn}</td><td>${h.min}분</td></tr>`).join('')}
+      ${hist.map(h=>`<tr ${h.res?`data-mkrec="${h.ts}" style="cursor:pointer"`:''}><td>${new Date(h.ts).toLocaleDateString('ko-KR')}${h.res?' <span style="color:var(--kr);font-size:11px">결과 보기</span>':''}</td><td>${MOCK_FMT[h.fmt].label}</td><td><b style="color:${h.pct>=60?'var(--ok)':'var(--bad)'}">${h.score}/${h.total} (${h.pct}%)</b></td><td>${h.c}/${h.cn}</td><td>${h.sp}/${h.sn}</td><td>${h.min}분</td></tr>`).join('')}
       </tbody></table>`:''}
+    ${MW.html}
   </div>`;
+  app().querySelectorAll('[data-mkrec]').forEach(tr=>tr.onclick=()=>{const h=S.mock.hist.find(x=>String(x.ts)===tr.dataset.mkrec);if(h)renderMockResult(h);});
+  app().querySelectorAll('[data-mwt]').forEach(b=>b.onclick=()=>{const g=MW.groups[b.dataset.mwt];if(!g)return;
+    const ids=b.dataset.all?g.allG:g.leftG, cs=b.dataset.all?g.allC:g.leftC;
+    if(ids.length)startSession(ids,'[모의고사 오답] '+g.name,'guide');else if(cs.length)startSession(cs,'[모의고사 오답] '+g.name+' · ACCP','mockwrong');});
   app().querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>{
     if(cur&&!cur.done&&!b.dataset.ok){b.dataset.ok=1;b.textContent='진행 중인 시험을 버리고 새로 시작하려면 한 번 더 누르세요';return;}
     S.mock.cur=mockBuild(b.dataset.mk,{fresh:$('#mkFresh').checked});save();renderMockQ();});
@@ -694,7 +730,7 @@ function mockGrade(){
     res.push({key,a,ok});});
   const total=c.ids.length,min=Math.round((Date.now()-c.start)/60000);
   const rec={ts:Date.now(),fmt:c.fmt,score,total,pct:Math.round(score/total*100),c:cc,cn:c.nCommon,sp:score-cc,sn:total-c.nCommon,min,byT,res};
-  S.mock.hist=S.mock.hist||[];S.mock.hist.push({ts:rec.ts,fmt:rec.fmt,score,total,pct:rec.pct,c:cc,cn:rec.cn,sp:rec.sp,sn:rec.sn,min});
+  S.mock.hist=S.mock.hist||[];S.mock.hist.push({ts:rec.ts,fmt:rec.fmt,score,total,pct:rec.pct,c:cc,cn:rec.cn,sp:rec.sp,sn:rec.sn,min,byT,res});
   if(S.mock.hist.length>30)S.mock.hist=S.mock.hist.slice(-30);
   S.mock.last=rec;delete S.mock.cur;bumpStreak();save();renderMockResult(rec);
 }
@@ -1489,7 +1525,18 @@ function renderDrillHome(){
       <span><span class="t">${esc(t.name)}</span><br><span class="s">${items.length}문제 · 국내 지침 근거</span></span>
       <span class="cnt" style="color:var(--kr);background:var(--kr-wash)">${done}/${items.length}</span>`;
     btn.onclick=()=>startSession(items.map(g=>g.id),'['+t.name+'] 가이드라인 자가점검','guide');
-    gm.appendChild(btn);
+    const cell=document.createElement('div'); btn.style.width='100%'; cell.appendChild(btn); gm.appendChild(cell);
+    const sub=document.createElement('div');
+    sub.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 4px';
+    const chip=(lab,ids,col)=>{if(!ids.length)return;const c=document.createElement('button');
+      c.style.cssText=`font-size:12px;padding:3px 9px;border-radius:999px;background:transparent;border:1px solid ${col};color:${col};cursor:pointer`;
+      c.innerHTML=`${lab} <b style="font-family:var(--mono)">${ids.length}</b>`;
+      c.onclick=()=>startSession(ids,'['+t.name+'] '+lab,'guide');sub.appendChild(c);};
+    chip('상 안 푼',items.filter(g=>g.level>=3&&!((S.gq[g.id]||{}).seen>0)).map(g=>g.id),LV[3].c);
+    chip('안 푼',items.filter(g=>g.level<3&&!((S.gq[g.id]||{}).seen>0)).map(g=>g.id),'var(--muted)');
+    chip('오답노트',items.filter(g=>inWrong(S.gq[g.id])).map(g=>g.id),'var(--bad)');
+    chip('별표',items.filter(g=>(S.gq[g.id]||{}).flag).map(g=>g.id),'var(--amber)');
+    if(sub.childNodes.length)cell.appendChild(sub);
   });
 
   const order=['항생제 스튜어드십 (ASP)','상기도 감염','하기도 감염','HIV/AIDS','생식기 감염·STD','중추신경계감염','요로감염','피부·연조직감염','골관절감염','복강내감염','감염심내막염','진균감염','결핵','수술 예방','여행자·해외유입감염','코로나19','감염치료 원칙','의학통계·논문비평','인플루엔자','예방접종'];
@@ -1515,7 +1562,7 @@ function renderDstTable(tb){
     <tbody>${tb.rows.map(r=>`<tr>${r.map((c,i)=>`<td>${i===0?esc(c):cell(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function renderQuestion(){
-  picked=null;revealed=false;
+  picked=null;revealed=false; SESS.t0=Date.now();
   const id=SESS.ids[SESS.pos], it=curItem(id), s=curState(id);
   const total=SESS.ids.length;
   const cells=[1,2,3,4,5].map(i=>`<i class="${i<=s.box?(s.box===5?'full':'on'):''}"></i>`).join('');
@@ -1575,6 +1622,8 @@ function grade(){
   if(picked==null||revealed)return; revealed=true;
   const id=SESS.ids[SESS.pos], it=curItem(id), s=curState(id);
   const ok=picked===it.answer;
+  const dt=Math.min(600000,Math.max(0,Date.now()-(SESS.t0||Date.now())));
+  s.tms=(s.tms||0)+dt; s.tn=(s.tn||0)+1; SESS.solveMs=(SESS.solveMs||0)+dt; SESS.solveN=(SESS.solveN||0)+1;
   s.seen++;
   if(ok){s.correct++;s.box=Math.min(5,(s.box||0)+1);s.last='c';
     if(s.wl===1){s.ws=(s.ws||0)+1;if(s.ws>=WRONG_EXIT){s.wl=0;s.ws=0;s._exited=1;}}}
@@ -1621,6 +1670,7 @@ function renderDone(){
   const ids=[...new Set(SESS.ids)], c=ids.filter(i=>curState(i).last==='c').length, dueLeft=MODES.due().length;
   app().innerHTML=`<div class="card done"><div class="eyebrow">${esc(SESS.title)} 완료</div>
     <div class="big">${c}/${ids.length}</div><div class="sub">이번 세션 정답 · 진도 저장됨</div>
+    ${SESS.solveN?`<div class="sub" style="margin-top:4px">풀이시간 ${Math.round(SESS.solveMs/60000)}분 · 문항당 평균 ${Math.round(SESS.solveMs/SESS.solveN/1000)}초 <span style="color:var(--faint)">(해설 읽는 시간 제외)</span></div>`:''}
     <div class="row">${(!isGuide()&&dueLeft)?`<button class="btn btn-primary" id="more">오늘 복습 이어서 (${dueLeft})</button>`:''}
       <button class="btn btn-ghost" id="back">드릴 홈</button>
       <button class="btn btn-ghost" id="home2">전체 홈</button></div></div>`;
@@ -2090,60 +2140,40 @@ const INK={
 
   var lastSent = 0;
 
-  function areaMap() {
-    var m = {};
-    try {
-      if (typeof BANK !== "undefined" && BANK.length) {
-        for (var i = 0; i < BANK.length; i++) {
-          var b = BANK[i];
-          if (b && b.id != null) m[String(b.id)] = b.sectionKo || b.section || "미분류";
-        }
-      }
-    } catch (e) {}
-    try {
-      if (typeof GUIDEQ !== "undefined" && GUIDEQ.length) {
-        for (var j = 0; j < GUIDEQ.length; j++) {
-          var g = GUIDEQ[j];
-          if (g && g.id != null) m[String(g.id)] = g.tname || g.topic || "미분류";
-        }
-      }
-    } catch (e) {}
-    return m;
-  }
+  // 리포트 집계 (2026-11-07 수정)
+  // - GUIDEQ 진도는 hub.gq, BANK(드릴) 진도는 hub.q 에 저장됨 → 둘 다 집계
+  // - 토픽은 GUIDEQ의 topic 키로 묶음(같은 토픽이 tname 표기 차이로 쪼개지지 않도록)
+  // - 오답노트 = wl===1, 별표 = flag, 안 푼 = seen 0
+  // - 소스에서 삭제된 문항의 저장 기록(고아 키)은 집계에서 제외하고 개수만 표시
+  var TOPIC_KO = {
+    biostat: "의학통계·논문비평", transplant: "고형장기이식", tdm: "항생제 TDM",
+    onco: "암환자·호중구감소성 발열", travel: "여행자·해외유입", principles: "감염치료의 원칙",
+    fungal: "진균감염", covid: "코로나19", surgical: "수술 후 감염 예방", bonejoint: "골관절",
+    tb: "결핵", endocarditis: "감염심내막염", cns: "중추신경계", sti: "성매개감염",
+    vacc: "예방접종", uri: "상기도감염", influenza: "인플루엔자", asp: "ASP",
+    gi: "위장관·복강내", hiv: "HIV·기회감염", ssti: "피부·연조직", pneumonia: "폐렴", uti: "요로감염"
+  };
 
   function row(area) {
-    return { 영역: area, 총문항: 0, 푼문항: 0, 정답: 0, 오답: 0, 안푼: 0, 약한문항: 0, 정답률: "" };
+    return { 영역: area, 총문항: 0, 푼문항: 0, 안푼: 0, 오답노트: 0, 별표: 0, 정답: 0, 오답: 0, 정답률: "" };
   }
 
   function summarize() {
     var hub = {};
     try { hub = JSON.parse(localStorage.getItem("idpc_hub_v1") || "{}"); } catch (e) { return null; }
-    var q = hub.q || {};
-    var map = areaMap();
-    var agg = {};
-    var id, a;
+    var day = 24 * 60 * 60 * 1000, now = Date.now();
+    var agg = {}, lastTs = 0, 최근24h = 0, 최근7일 = 0, 고아 = 0;
 
-    for (id in map) {
-      a = map[id];
-      if (!agg[a]) agg[a] = row(a);
-      agg[a].총문항++;
-    }
-
-    var total = { 총문항: 0, 푼문항: 0, 정답: 0, 오답: 0, 약한문항: 0 };
-    var lastTs = 0;
-    var day = 24 * 60 * 60 * 1000;
-    var now = Date.now();
-    var 최근24h = 0, 최근7일 = 0;
-
-    for (id in q) {
-      var r = q[id] || {};
-      a = map[id] || "미분류";
-      if (!agg[a]) agg[a] = row(a);
-      var o = agg[a];
-      if (r.seen) o.푼문항++;
+    function add(area, r) {
+      if (!agg[area]) agg[area] = row(area);
+      var o = agg[area];
+      r = r || {};
+      o.총문항++;
+      if (r.seen) o.푼문항++; else o.안푼++;
+      if (r.wl === 1) o.오답노트++;
+      if (r.flag) o.별표++;
       o.정답 += r.correct || 0;
       o.오답 += r.wrong || 0;
-      if ((r.wrong || 0) > (r.correct || 0) || r.flag) o.약한문항++;
       if (r.lastTs) {
         if (r.lastTs > lastTs) lastTs = r.lastTs;
         if (now - r.lastTs <= day) 최근24h++;
@@ -2151,43 +2181,42 @@ const INK={
       }
     }
 
-    var rows = [];
-    for (a in agg) {
-      var x = agg[a];
-      x.안푼 = Math.max(0, x.총문항 - x.푼문항);
-      var tried = x.정답 + x.오답;
-      x.정답률 = tried ? Math.round((x.정답 * 100) / tried) : "";
-      total.총문항 += x.총문항;
-      total.푼문항 += x.푼문항;
-      total.정답 += x.정답;
-      total.오답 += x.오답;
-      total.약한문항 += x.약한문항;
+    var gq = hub.gq || {}, q = hub.q || {}, known = {};
+    try {
+      if (typeof GUIDEQ !== "undefined") GUIDEQ.forEach(function (g) {
+        known["g:" + g.id] = 1;
+        add(TOPIC_KO[g.topic] || g.tname || g.topic || "미분류", gq[g.id]);
+      });
+    } catch (e) {}
+    try {
+      if (typeof BANK !== "undefined") BANK.forEach(function (b) {
+        known["b:" + b.id] = 1;
+        add("[드릴] " + (b.sectionKo || b.section || "미분류"), q[b.id]);
+      });
+    } catch (e) {}
+    var id;
+    for (id in gq) if (!known["g:" + id]) 고아++;
+    for (id in q) if (!known["b:" + id]) 고아++;
+
+    var rows = [], total = row("전체");
+    for (var a in agg) {
+      var x = agg[a], tried = x.정답 + x.오답;
+      x.정답률 = tried ? Math.round((x.정답 * 1000) / tried) / 10 : "";
+      ["총문항", "푼문항", "안푼", "오답노트", "별표", "정답", "오답"].forEach(function (k) { total[k] += x[k]; });
       rows.push(x);
     }
-
     rows.sort(function (p, n) {
-      var pr = p.정답률 === "" ? 999 : p.정답률;
-      var nr = n.정답률 === "" ? 999 : n.정답률;
+      var pr = p.정답률 === "" ? 999 : p.정답률, nr = n.정답률 === "" ? 999 : n.정답률;
       return pr - nr;
     });
-
     var t = total.정답 + total.오답;
-    return {
-      at: new Date().toISOString(),
-      전체: {
-        총문항: total.총문항,
-        푼문항: total.푼문항,
-        안푼: Math.max(0, total.총문항 - total.푼문항),
-        정답: total.정답,
-        오답: total.오답,
-        정답률: t ? Math.round((total.정답 * 100) / t) : "",
-        약한문항: total.약한문항,
-        최근풀이: lastTs ? new Date(lastTs).toISOString() : "",
-        최근24시간: 최근24h,
-        최근7일: 최근7일
-      },
-      요약: rows
-    };
+    total.정답률 = t ? Math.round((total.정답 * 1000) / t) / 10 : "";
+    total.최근풀이 = lastTs ? new Date(lastTs).toISOString() : "";
+    total.최근24시간 = 최근24h;
+    total.최근7일 = 최근7일;
+    total.삭제된문항기록 = 고아;
+    delete total.영역;
+    return { at: new Date().toISOString(), 전체: total, 요약: rows };
   }
 
   function rawDump() {
