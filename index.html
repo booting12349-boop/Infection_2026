@@ -499,6 +499,17 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
 .czb.rv{background:rgba(196,123,8,.08)}.czb.rv .cza{visibility:visible}
 .czm{flex:0 0 auto;font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;margin-top:6px}
 .czm.on{background:var(--bad,#c0392b);color:#fff;border-color:transparent}
+.czmode{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle}
+.czmode button{font-size:12px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}
+.czmode button.on{background:var(--ink);color:#fff;border-color:transparent}
+.czw{display:inline-flex;flex-direction:column;vertical-align:middle;margin:0 3px}
+.czi{font:inherit;font-size:14px;padding:2px 6px;border:0;border-bottom:2px solid var(--ink);background:rgba(0,0,0,.025);outline:none}
+.czi:focus{background:rgba(15,125,114,.08)}
+.czw.ok .czi{border-color:var(--teal);color:var(--teal);background:rgba(15,125,114,.08)}
+.czw.ng .czi{border-color:var(--bad,#c0392b);color:var(--bad,#c0392b);text-decoration:line-through}
+.czr{display:none;font-size:12px;line-height:1.3;color:var(--kr);font-weight:700;white-space:nowrap}
+.czw.show .czr{display:block}
+.czscore{font-family:var(--mono);font-size:14px;align-self:center;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -1335,6 +1346,16 @@ function czLines(topic){
     out.push({k:'t'+ti+'.'+ri,h:(T.title||'표').replace(/\s*\[출처:.*$/,''),t});}));
   return out.map(L=>Object.assign(L,{m:czMarks(L.t)})).filter(L=>L.m.length);
 }
+function czNorm(x){return String(x||'').toLowerCase().normalize('NFKC')
+  .replace(/[\s,]/g,'').replace(/[–—~∼]/g,'-').replace(/μ/g,'u').replace(/mcg/g,'ug')
+  .replace(/이상$/,'').replace(/[()·]/g,'');}
+function czOk(inp,ans){const a=czNorm(ans),b=czNorm(inp);if(!b)return false;if(a===b)return true;
+  if(!/\d/.test(a))return a.replace(/-/g,'')===b.replace(/-/g,'');
+  const cmp=t=>(t.match(/^[≥≤<>]=?/)||[''])[0].replace('>=','≥').replace('<=','≤');
+  const core=t=>t.replace(/^[≥≤<>]=?/,'').replace(/[a-z가-힣%/²]+$/,'');
+  return cmp(a)===cmp(b)&&core(a)===core(b);}
+function czMode(){try{return localStorage.getItem('idpc_czmode')||'pen';}catch(e){return 'pen';}}
+function czSetMode(m){try{localStorage.setItem('idpc_czmode',m);}catch(e){}}
 function czStore(topic){S.cz=S.cz||{};return S.cz[topic]||(S.cz[topic]={miss:{},done:{}});}
 function czSets(topic){const n=czLines(topic).length;return Math.ceil(n/CZ_PER);}
 function renderCloze(topic,set,missOnly){
@@ -1347,11 +1368,14 @@ function renderCloze(topic,set,missOnly){
   else{set=Math.max(0,Math.min(set||0,nset-1)); lines=all.slice(set*CZ_PER,(set+1)*CZ_PER);}
   CZKEY=topic+':'+(missOnly?'miss':set);
   const nb=lines.reduce((a,L)=>a+L.m.length,0);
+  const TYPE=czMode()==='type';
   let lastH='';
   const body=lines.map(L=>{
     let html='',pos=0;
     L.m.forEach((m,i)=>{const ans=L.t.slice(m.a,m.b);
-      html+=esc(L.t.slice(pos,m.a))+`<span class="czb" data-i="${i}" style="min-width:${Math.max(3,Math.min(16,ans.length*0.72+1))}em"><span class="cza">${esc(ans)}</span></span>`;pos=m.b;});
+      html+=esc(L.t.slice(pos,m.a))+(TYPE
+        ?`<span class="czw"><input class="czi" data-ans="${escA(ans)}" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:${Math.max(4,Math.min(18,ans.length*0.78+1.5))}em"><span class="czr">${esc(ans)}</span></span>`
+        :`<span class="czb" data-i="${i}" style="min-width:${Math.max(3,Math.min(16,ans.length*0.72+1))}em"><span class="cza">${esc(ans)}</span></span>`);pos=m.b;});
     html+=esc(L.t.slice(pos));
     const head=L.h!==lastH?`<div class="czh">${esc(L.h)}</div>`:''; lastH=L.h;
     return `${head}<div class="czl" data-k="${L.k}"><div class="czt">${html}</div><button class="czm ${st.miss[L.k]?'on':''}" data-k="${L.k}">${st.miss[L.k]?'몰랐음 ✓':'몰랐음'}</button></div>`;}).join('');
@@ -1361,10 +1385,12 @@ function renderCloze(topic,set,missOnly){
     <button class="btn btn-ghost" id="czBack" style="margin-bottom:14px">← ${esc(t?t.name:topic)} 정리로</button>
     <div class="card" style="padding:20px 22px">
       <h2 style="margin:0 0 4px;font-size:20px">✍️ 빈칸 노트 · ${esc(t?t.name:topic)}${missOnly?' · 몰랐음만':''}</h2>
-      <div class="czinfo nohl">빈칸 ${nb}개 · 펜슬(✏️)로 빈칸에 직접 쓰고 → 빈칸을 누르면 정답 · 모르면 줄 끝 「몰랐음」</div>
+      <div class="czinfo nohl">빈칸 ${nb}개 · ${TYPE?'빈칸에 입력(Enter=다음 칸) → 「채점」 · 틀린 줄은 자동으로 「몰랐음」':'펜슬(✏️)로 빈칸에 직접 쓰고 → 빈칸을 누르면 정답 · 모르면 줄 끝 「몰랐음」'}
+        <span class="czmode"><button data-m="pen" class="${TYPE?'':'on'}">✏️ 펜슬</button><button data-m="type" class="${TYPE?'on':''}">⌨️ 입력·채점</button></span></div>
       ${setBtns?`<div class="czsets nohl">세트 ${setBtns}</div>`:''}
       <div class="czbody">${body||'<div class="czinfo">「몰랐음」 표시한 줄이 없어요.</div>'}</div>
       <div class="todo-actions nohl" style="margin-top:16px">
+        ${TYPE?`<button class="cta" id="czGrade">채점</button><span class="czscore" id="czScore"></span>`:''}
         <button class="cta alt" id="czReveal">전체 정답 보기</button>
         <button class="cta alt" id="czWipe">이 시트 필기 지우기</button>
         ${!missOnly?`<button class="cta" id="czDone">이 세트 끝 ✓</button>`:''}
@@ -1380,7 +1406,25 @@ function renderCloze(topic,set,missOnly){
     b.classList.toggle('on',!!st.miss[k]);b.textContent=st.miss[k]?'몰랐음 ✓':'몰랐음';});
   a.querySelectorAll('.czs').forEach(b=>b.onclick=()=>renderCloze(topic,+b.dataset.s,false));
   $('#czBack').onclick=()=>{CZKEY=null;renderDigest(topic);};
-  $('#czReveal').onclick=()=>{const all=[...a.querySelectorAll('.czb')];const on=all.some(x=>!x.classList.contains('rv'));all.forEach(x=>x.classList.toggle('rv',on));};
+  $('#czReveal').onclick=()=>{if(TYPE){a.querySelectorAll('.czw').forEach(w=>w.classList.add('show'));return;}
+    const all=[...a.querySelectorAll('.czb')];const on=all.some(x=>!x.classList.contains('rv'));all.forEach(x=>x.classList.toggle('rv',on));};
+  a.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{czSetMode(b.dataset.m);renderCloze(topic,set,missOnly);});
+  if(TYPE){
+    const ins=[...a.querySelectorAll('.czi')];
+    ins.forEach((el,i)=>el.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();e.stopPropagation();
+      if(i+1<ins.length)ins[i+1].focus();else $('#czGrade').click();}}));
+    $('#czGrade').onclick=()=>{let ok=0;
+      let tried=0;
+      a.querySelectorAll('.czl').forEach(row=>{let bad=false;
+        const rin=[...row.querySelectorAll('.czi')]; if(!rin.some(el=>el.value.trim()))return; tried+=rin.length;
+        rin.forEach(el=>{const g=czOk(el.value,el.dataset.ans);const w=el.parentElement;
+          w.classList.toggle('ok',g);w.classList.toggle('ng',!g);w.classList.toggle('show',!g);if(g)ok++;else bad=true;});
+        const k=row.dataset.k, mb=row.querySelector('.czm');
+        if(bad){st.miss[k]=true;mb.classList.add('on');mb.textContent='몰랐음 ✓';}
+        else if(missOnly&&st.miss[k]){delete st.miss[k];mb.classList.remove('on');mb.textContent='몰랐음';}});
+      save(); $('#czScore').textContent=ok+' / '+tried+' 정답'+(tried<ins.length?' (안 쓴 줄 '+Math.round((ins.length-tried))+'칸은 채점 안 함)':'')+(missOnly?' · 다 맞힌 줄은 몰랐음에서 빠짐':'');};
+    if(ins[0])setTimeout(()=>ins[0].focus(),50);
+  }
   $('#czWipe').onclick=()=>{try{INK.data[INK.page]=[];INK.save();INK.redraw();toast('이 시트의 필기를 지웠어요');}catch(e){}};
   if($('#czDone'))$('#czDone').onclick=()=>{st.done[set]=Date.now();save();toast('세트 '+(set+1)+' 완료');
     if(set+1<nset)renderCloze(topic,set+1,false);else renderCloze(topic,set,false);};
