@@ -510,6 +510,10 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
 .czr{display:none;font-size:12px;line-height:1.3;color:var(--kr);font-weight:700;white-space:nowrap}
 .czw.show .czr{display:block}
 .czscore{font-family:var(--mono);font-size:14px;align-self:center;color:var(--ink)}
+.czbtns{display:flex;gap:6px;flex:0 0 auto;align-items:flex-start;margin-top:6px}
+.czst{font-size:16px;line-height:1;padding:3px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--amber,#c47b08);cursor:pointer}
+.czst.on{background:var(--amber,#c47b08);color:#fff;border-color:transparent}
+.czl .czm{margin-top:0}
 </style>
 </head>
 <body>
@@ -995,6 +999,7 @@ function renderHome(){
       ${d.wrong?`<button class="cta alt" id="goWrong">틀린 문제 · ACCP <span class="n">${d.wrong}</span></button>`:''}
       ${d.gwrong?`<button class="cta alt" id="goGWrong">틀린 문제 · 가이드라인 <span class="n">${d.gwrong}</span></button>`:''}
       <button class="cta alt" id="goGDue">가이드라인 복습 <span class="n">${GMODES.dueSeen().length}</span></button>
+      ${(()=>{const cz=S.cz||{};return Object.keys(cz).filter(t=>DIG_BY_TOPIC[t]&&Object.keys(cz[t].star||{}).length).map(t=>`<button class="cta alt" data-czstar="${t}">★ 별표 빈칸 · ${esc((TOPIC_BY[t]||{}).name||t)} <span class="n">${Object.keys(cz[t].star).length}</span></button>`).join('');})()}
       ${(()=>{const cz=S.cz||{};return Object.keys(cz).filter(t=>DIG_BY_TOPIC[t]&&Object.keys(cz[t].miss||{}).length).map(t=>`<button class="cta alt" data-czmiss="${t}">✍️ 몰랐음 빈칸 · ${esc((TOPIC_BY[t]||{}).name||t)} <span class="n">${Object.keys(cz[t].miss).length}</span></button>`).join('');})()}
       ${(GMODES.easy().length+MODES.easy().length)?`<button class="cta alt" id="goEasy">쉬운 문제 훑기 <span class="n">${GMODES.easy().length+MODES.easy().length}</span></button>`:''}
       <button class="cta alt" id="goCurr">출제범위 훑기 <span class="n">${c.done}/${c.total}</span></button>
@@ -1040,6 +1045,7 @@ function renderHome(){
   if($('#goWrong'))$('#goWrong').onclick=()=>{const ids=MODES.wrong();if(ids.length){nav('drill');startSession(ids,'틀린 문제만','wrong');}};
   if($('#goGWrong'))$('#goGWrong').onclick=()=>{const ids=GMODES.wrong();if(ids.length){nav('drill');startSession(ids,'가이드라인 · 틀린 문제만','guide');}};
   $('#goCurr').onclick=()=>nav('curriculum');
+  document.querySelectorAll('[data-czstar]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.czstar,0,'star');});
   document.querySelectorAll('[data-czmiss]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.czmiss,0,true);});
   if($('#goEasy'))$('#goEasy').onclick=()=>{const g=GMODES.easy(),a=MODES.easy();nav('drill');
     if(g.length)startSession(g,'쉬운 문제 훑기 · 가이드라인','guide');else startSession(a,'쉬운 문제 훑기 · ACCP','easy');};
@@ -1329,7 +1335,8 @@ const CZ_DRUG=/\b(?:cef[a-z]+|ceph[a-z]+|[A-Za-z][a-z]*(?:cillin|mycin|micin|flo
 const CZ_NUM=/(?:[≥≤<>]\s*)?\d[\d,.]*(?:\s*[~–\-]\s*\d[\d,.]*)?\s*(?:mg\/kg\/day|mg\/kg\/일|mg\/kg|mg\/일|mg|mcg|μg|g\/일|g|mL\/min(?:\/1\.73\s*m²)?|mL|IU\/mL|IU|U\/L|cells\/μL|cells\/mm³|mmHg|%|일|주|개월|시간|분|회|정|배|세|kg)(?![A-Za-z가-힣])|\bq\d+h\b|\b(?:qd|bid|tid|qid)\b/g;
 function czMarks(txt){
   const hits=[];
-  const add=re=>{re.lastIndex=0;let m;while((m=re.exec(txt))){const a=m.index,b=a+m[0].length;
+  const add=re=>{re.lastIndex=0;let m;while((m=re.exec(txt))){let a=m.index;const b=a+m[0].length;
+    const cm=m[0].match(/^[≥≤<>]\s*/); if(cm)a+=cm[0].length;
     if(m[0].trim().length<2&&!/\d/.test(m[0]))continue;
     if(!hits.some(h=>a<h.b&&b>h.a))hits.push({a,b});}};
   add(CZ_NUM); add(CZ_DRUG);
@@ -1346,17 +1353,33 @@ function czLines(topic){
     out.push({k:'t'+ti+'.'+ri,h:(T.title||'표').replace(/\s*\[출처:.*$/,''),t});}));
   return out.map(L=>Object.assign(L,{m:czMarks(L.t)})).filter(L=>L.m.length);
 }
+const CZ_SYN=[['50%','절반','반','1/2','0.5배','반으로','반감'],['200%','2배','두배'],['25%','1/4'],['33%','1/3']];
+const CZ_FREQ=[['qd','1일1회','하루1회','q24h','매일1회'],['bid','1일2회','하루2회','q12h'],['tid','1일3회','하루3회','q8h'],['qid','1일4회','하루4회','q6h']];
+function czSyn(t){for(const g of CZ_SYN.concat(CZ_FREQ)){const n=g.map(czNorm0);if(n.includes(t))return n[0];}
+  let m;
+  if((m=t.match(/^([\d.]+)g$/)))return (+m[1]*1000)+'mg';
+  if((m=t.match(/^([\d.]+)주$/)))return (+m[1]*7)+'일';
+  if((m=t.match(/^([\d.]+)시간$/))&&(+m[1])%24===0)return (+m[1]/24)+'일';
+  return t;}
+function czNorm0(x){return String(x||'').toLowerCase().normalize('NFKC').replace(/(\d)\s*[-–—~∼]\s*(\d)/g,'$1-$2').replace(/(\d)\s+(\d)/g,'$1-$2')
+  .replace(/[\s,]/g,'').replace(/μ/g,'u').replace(/mcg/g,'ug').replace(/[()·]/g,'').replace(/(이상|초과|이하|미만|이내)$/,'');}
+function czAlt(line,ans){const out=[ans];
+  const re1=/(\d+)\s*(정|캡슐|cap)\s*\(\s*([\d,.]+)\s*(mg|g)\s*\)/gi, re2=/([\d,.]+)\s*(mg|g)\s*\(\s*(?:1회\s*)?(\d+)\s*(정|캡슐|cap)\s*\)/gi;
+  let m; const a=czNorm0(ans);
+  while((m=re1.exec(line))){const n=czNorm0(m[1]+m[2]),d=czNorm0(m[3]+m[4]);if(a===n)out.push(m[3]+m[4]);if(a===d)out.push(m[1]+m[2]);}
+  while((m=re2.exec(line))){const d=czNorm0(m[1]+m[2]),n=czNorm0(m[3]+m[4]);if(a===n)out.push(m[1]+m[2]);if(a===d)out.push(m[3]+m[4]);}
+  return out;}
 function czNorm(x){return String(x||'').toLowerCase().normalize('NFKC')
   .replace(/[\s,]/g,'').replace(/[–—~∼]/g,'-').replace(/μ/g,'u').replace(/mcg/g,'ug')
   .replace(/이상$/,'').replace(/[()·]/g,'');}
-function czOk(inp,ans){const a=czNorm(ans),b=czNorm(inp);if(!b)return false;if(a===b)return true;
+function czOk(inp,ans,line){if(line){const alts=czAlt(line,ans);if(alts.length>1)return alts.some(x=>czOk1(inp,x));}return czOk1(inp,ans);}
+function czOk1(inp,ans){const a=czSyn(czNorm0(ans)),b=czSyn(czNorm0(inp));if(!b)return false;if(a===b)return true;
   if(!/\d/.test(a))return a.replace(/-/g,'')===b.replace(/-/g,'');
-  const cmp=t=>(t.match(/^[≥≤<>]=?/)||[''])[0].replace('>=','≥').replace('<=','≤');
   const core=t=>t.replace(/^[≥≤<>]=?/,'').replace(/[a-z가-힣%/²]+$/,'');
-  return cmp(a)===cmp(b)&&core(a)===core(b);}
+  return core(a)!==''&&core(a)===core(b);}
 function czMode(){try{return localStorage.getItem('idpc_czmode')||'pen';}catch(e){return 'pen';}}
 function czSetMode(m){try{localStorage.setItem('idpc_czmode',m);}catch(e){}}
-function czStore(topic){S.cz=S.cz||{};return S.cz[topic]||(S.cz[topic]={miss:{},done:{}});}
+function czStore(topic){S.cz=S.cz||{};const o=S.cz[topic]||(S.cz[topic]={miss:{},done:{},star:{}});o.star=o.star||{};return o;}
 function czSets(topic){const n=czLines(topic).length;return Math.ceil(n/CZ_PER);}
 function renderCloze(topic,set,missOnly){
   const d=DIG_BY_TOPIC[topic], t=TOPIC_BY[topic]; if(!d){toast('정리본이 없는 토픽이에요');return;}
@@ -1364,9 +1387,11 @@ function renderCloze(topic,set,missOnly){
   DIGVIEW=null; tSet(topic);
   const st=czStore(topic), all=czLines(topic), nset=Math.ceil(all.length/CZ_PER);
   let lines;
-  if(missOnly){lines=all.filter(L=>st.miss[L.k]);}
+  const STAR=missOnly==='star';
+  if(STAR){lines=all.filter(L=>st.star[L.k]);}
+  else if(missOnly){lines=all.filter(L=>st.miss[L.k]);}
   else{set=Math.max(0,Math.min(set||0,nset-1)); lines=all.slice(set*CZ_PER,(set+1)*CZ_PER);}
-  CZKEY=topic+':'+(missOnly?'miss':set);
+  CZKEY=topic+':'+(STAR?'star':missOnly?'miss':set);
   const nb=lines.reduce((a,L)=>a+L.m.length,0);
   const TYPE=czMode()==='type';
   let lastH='';
@@ -1378,23 +1403,24 @@ function renderCloze(topic,set,missOnly){
         :`<span class="czb" data-i="${i}" style="min-width:${Math.max(3,Math.min(16,ans.length*0.72+1))}em"><span class="cza">${esc(ans)}</span></span>`);pos=m.b;});
     html+=esc(L.t.slice(pos));
     const head=L.h!==lastH?`<div class="czh">${esc(L.h)}</div>`:''; lastH=L.h;
-    return `${head}<div class="czl" data-k="${L.k}"><div class="czt">${html}</div><button class="czm ${st.miss[L.k]?'on':''}" data-k="${L.k}">${st.miss[L.k]?'몰랐음 ✓':'몰랐음'}</button></div>`;}).join('');
+    return `${head}<div class="czl" data-k="${L.k}" data-t="${escA(L.t)}"><div class="czt">${html}</div><div class="czbtns"><button class="czst ${st.star[L.k]?'on':''}" data-k="${L.k}" title="별표">${st.star[L.k]?'★':'☆'}</button><button class="czm ${st.miss[L.k]?'on':''}" data-k="${L.k}">${st.miss[L.k]?'몰랐음 ✓':'몰랐음'}</button></div></div>`;}).join('');
   const setBtns=missOnly?'':Array.from({length:nset},(_,i)=>`<button class="czs ${i===set?'on':''} ${st.done[i]?'dn':''}" data-s="${i}">${i+1}</button>`).join('');
-  const nMiss=Object.keys(st.miss).filter(k=>st.miss[k]).length;
+  const nMiss=Object.keys(st.miss).filter(k=>st.miss[k]).length, nStar=Object.keys(st.star).filter(k=>st.star[k]).length;
   app().innerHTML=`<div class="digest czwrap">
     <button class="btn btn-ghost" id="czBack" style="margin-bottom:14px">← ${esc(t?t.name:topic)} 정리로</button>
     <div class="card" style="padding:20px 22px">
-      <h2 style="margin:0 0 4px;font-size:20px">✍️ 빈칸 노트 · ${esc(t?t.name:topic)}${missOnly?' · 몰랐음만':''}</h2>
+      <h2 style="margin:0 0 4px;font-size:20px">✍️ 빈칸 노트 · ${esc(t?t.name:topic)}${STAR?' · ★ 별표만':missOnly?' · 몰랐음만':''}</h2>
       <div class="czinfo nohl">빈칸 ${nb}개 · ${TYPE?'빈칸에 입력(Enter=다음 칸) → 「채점」 · 틀린 줄은 자동으로 「몰랐음」':'펜슬(✏️)로 빈칸에 직접 쓰고 → 빈칸을 누르면 정답 · 모르면 줄 끝 「몰랐음」'}
         <span class="czmode"><button data-m="pen" class="${TYPE?'':'on'}">✏️ 펜슬</button><button data-m="type" class="${TYPE?'on':''}">⌨️ 입력·채점</button></span></div>
       ${setBtns?`<div class="czsets nohl">세트 ${setBtns}</div>`:''}
-      <div class="czbody">${body||'<div class="czinfo">「몰랐음」 표시한 줄이 없어요.</div>'}</div>
+      <div class="czbody">${body||`<div class="czinfo">${STAR?'별표(☆)한 줄이 없어요.':'「몰랐음」 표시한 줄이 없어요.'}</div>`}</div>
       <div class="todo-actions nohl" style="margin-top:16px">
         ${TYPE?`<button class="cta" id="czGrade">채점</button><span class="czscore" id="czScore"></span>`:''}
         <button class="cta alt" id="czReveal">전체 정답 보기</button>
         <button class="cta alt" id="czWipe">이 시트 필기 지우기</button>
         ${!missOnly?`<button class="cta" id="czDone">이 세트 끝 ✓</button>`:''}
         ${nMiss&&!missOnly?`<button class="cta alt" id="czMiss">몰랐음만 다시 <span class="n">${nMiss}</span></button>`:''}
+        ${nStar&&!STAR?`<button class="cta alt" id="czStar">★ 별표만 <span class="n">${nStar}</span></button>`:''}
         ${missOnly?`<button class="cta alt" id="czAll">전체 세트로</button>`:''}
       </div>
       <div class="dgsrc nohl">원문 · ${esc(d.src)} (정리 페이지 「한눈에 핵심」·용량 표에서 약제명·수치만 가림)</div>
@@ -1417,11 +1443,12 @@ function renderCloze(topic,set,missOnly){
       let tried=0;
       a.querySelectorAll('.czl').forEach(row=>{let bad=false;
         const rin=[...row.querySelectorAll('.czi')]; if(!rin.some(el=>el.value.trim()))return; tried+=rin.length;
-        rin.forEach(el=>{const g=czOk(el.value,el.dataset.ans);const w=el.parentElement;
+        const LT=row.dataset.t||'';
+        rin.forEach(el=>{const g=czOk(el.value,el.dataset.ans,LT);const w=el.parentElement;
           w.classList.toggle('ok',g);w.classList.toggle('ng',!g);w.classList.toggle('show',!g);if(g)ok++;else bad=true;});
         const k=row.dataset.k, mb=row.querySelector('.czm');
         if(bad){st.miss[k]=true;mb.classList.add('on');mb.textContent='몰랐음 ✓';}
-        else if(missOnly&&st.miss[k]){delete st.miss[k];mb.classList.remove('on');mb.textContent='몰랐음';}});
+        else if(missOnly===true&&st.miss[k]){delete st.miss[k];mb.classList.remove('on');mb.textContent='몰랐음';}});
       save(); $('#czScore').textContent=ok+' / '+tried+' 정답'+(tried<ins.length?' (안 쓴 줄 '+Math.round((ins.length-tried))+'칸은 채점 안 함)':'')+(missOnly?' · 다 맞힌 줄은 몰랐음에서 빠짐':'');};
     if(ins[0])setTimeout(()=>ins[0].focus(),50);
   }
@@ -1430,6 +1457,9 @@ function renderCloze(topic,set,missOnly){
     if(set+1<nset)renderCloze(topic,set+1,false);else renderCloze(topic,set,false);};
   if($('#czMiss'))$('#czMiss').onclick=()=>renderCloze(topic,0,true);
   if($('#czAll'))$('#czAll').onclick=()=>renderCloze(topic,0,false);
+  if($('#czStar'))$('#czStar').onclick=()=>renderCloze(topic,0,'star');
+  a.querySelectorAll('.czst').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(st.star[k])delete st.star[k];else st.star[k]=Date.now();save();
+    b.classList.toggle('on',!!st.star[k]);b.textContent=st.star[k]?'★':'☆';});
 }
 function renderDigest(topicId){
   DIGVIEW=topicId; CZKEY=null; tSet(topicId);
@@ -1479,6 +1509,7 @@ function renderDigest(topicId){
     </div>
     <div class="todo-actions" style="margin-top:14px">
       ${czSets(topicId)?`<button class="cta" id="dgCloze">✍️ 빈칸 노트 <span class="n">${czSets(topicId)}세트</span></button>`:''}
+      ${(()=>{const n=Object.keys(czStore(topicId).star).length;return n?`<button class="cta alt" id="dgCzStar">★ 별표 빈칸 <span class="n">${n}</span></button>`:'';})()}
       ${gqs.length?`<button class="cta" id="dgQuiz">바로 자가점검 풀기 <span class="n">${gqs.length}</span></button>`:''}
       ${[...new Set(gqs.map(g=>g.grp).filter(Boolean))].map(gp=>{
         const n=gqs.filter(g=>g.grp===gp).length;
@@ -1487,6 +1518,7 @@ function renderDigest(topicId){
     </div></div>`;
   $('#dgBack').onclick=()=>renderCurriculum();
   $('#dgBack2').onclick=()=>renderCurriculum();
+  if($('#dgCzStar'))$('#dgCzStar').onclick=()=>renderCloze(topicId,0,'star');
   if($('#dgCloze'))$('#dgCloze').onclick=()=>{const st=czStore(topicId),n=czSets(topicId);let k=0;while(k<n-1&&st.done[k])k++;renderCloze(topicId,k,false);};
   if($('#dgNote'))$('#dgNote').oninput=e=>{if(S.topics[topicId]){S.topics[topicId].note=e.target.value;save();}};
   bindRounds();
@@ -1937,7 +1969,7 @@ function mergeState(a,b){
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]={done:!!((A[id]&&A[id].done)||(B[id]&&B[id].done))});o.plan=R;}
   {const A=a.cz||{},B=b.cz||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(t=>{const x=A[t]||{},y=B[t]||{};
-      R[t]={miss:Object.assign({},y.miss||{},x.miss||{}),done:Object.assign({},y.done||{},x.done||{})};});o.cz=R;}
+      R[t]={miss:Object.assign({},y.miss||{},x.miss||{}),done:Object.assign({},y.done||{},x.done||{}),star:Object.assign({},y.star||{},x.star||{})};});o.cz=R;}
   {const A=a.mn||{},B=b.mn||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]=Math.max(A[id]||0,B[id]||0));o.mn=R;}
   {const A=a.hl||{},B=b.hl||{},R={};
