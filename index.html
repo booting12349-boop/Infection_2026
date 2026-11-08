@@ -487,6 +487,18 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
 .mk-ch{font-size:13.5px;line-height:1.7;padding-left:22px}.mk-ch li.ok{color:var(--ok);font-weight:700}.mk-ch li.no{color:var(--bad);text-decoration:line-through}
 .addbox{border-left:3px solid var(--teal)}.kicebox{border-left:3px solid var(--kr)}.addcheck .sh{color:var(--kr)}
 .easybtn.on{background:var(--teal);color:#fff;border-color:transparent}
+.czinfo{font-size:13px;color:var(--muted);margin:2px 0 10px}
+.czsets{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;color:var(--muted);margin-bottom:12px}
+.czs{min-width:32px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;font-family:var(--mono);cursor:pointer}
+.czs.on{background:var(--ink);color:#fff;border-color:transparent}.czs.dn:not(.on){border-color:var(--teal);color:var(--teal)}
+.czh{font-weight:700;color:var(--teal-d);margin:18px 0 6px;font-size:14px}
+.czl{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.czt{flex:1;line-height:2.3;font-size:15px;word-break:keep-all}
+.czb{display:inline-block;height:1.75em;vertical-align:middle;border-bottom:2px solid var(--ink);margin:0 3px;cursor:pointer;position:relative;text-align:center}
+.czb .cza{visibility:hidden;color:var(--kr);font-weight:700;line-height:1.75em;white-space:nowrap}
+.czb.rv{background:rgba(196,123,8,.08)}.czb.rv .cza{visibility:visible}
+.czm{flex:0 0 auto;font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;margin-top:6px}
+.czm.on{background:var(--bad,#c0392b);color:#fff;border-color:transparent}
 </style>
 </head>
 <body>
@@ -767,7 +779,7 @@ function renderMockResult(r){
 /* ================= router ================= */
 let VIEW='home';
 let DIGVIEW=null;
-function nav(v){VIEW=v;SESS=null;clearInterval(MOCKT);if(v!=='drill')tSet(null);markVisit();
+function nav(v){VIEW=v;CZKEY=null;SESS=null;clearInterval(MOCKT);if(v!=='drill')tSet(null);markVisit();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else if(v==='mock')renderMockHome(); else renderDrillHome();
   window.scrollTo(0,0);
@@ -972,6 +984,7 @@ function renderHome(){
       ${d.wrong?`<button class="cta alt" id="goWrong">틀린 문제 · ACCP <span class="n">${d.wrong}</span></button>`:''}
       ${d.gwrong?`<button class="cta alt" id="goGWrong">틀린 문제 · 가이드라인 <span class="n">${d.gwrong}</span></button>`:''}
       <button class="cta alt" id="goGDue">가이드라인 복습 <span class="n">${GMODES.dueSeen().length}</span></button>
+      ${(()=>{const cz=S.cz||{};return Object.keys(cz).filter(t=>DIG_BY_TOPIC[t]&&Object.keys(cz[t].miss||{}).length).map(t=>`<button class="cta alt" data-czmiss="${t}">✍️ 몰랐음 빈칸 · ${esc((TOPIC_BY[t]||{}).name||t)} <span class="n">${Object.keys(cz[t].miss).length}</span></button>`).join('');})()}
       ${(GMODES.easy().length+MODES.easy().length)?`<button class="cta alt" id="goEasy">쉬운 문제 훑기 <span class="n">${GMODES.easy().length+MODES.easy().length}</span></button>`:''}
       <button class="cta alt" id="goCurr">출제범위 훑기 <span class="n">${c.done}/${c.total}</span></button>
     </div>
@@ -1016,6 +1029,7 @@ function renderHome(){
   if($('#goWrong'))$('#goWrong').onclick=()=>{const ids=MODES.wrong();if(ids.length){nav('drill');startSession(ids,'틀린 문제만','wrong');}};
   if($('#goGWrong'))$('#goGWrong').onclick=()=>{const ids=GMODES.wrong();if(ids.length){nav('drill');startSession(ids,'가이드라인 · 틀린 문제만','guide');}};
   $('#goCurr').onclick=()=>nav('curriculum');
+  document.querySelectorAll('[data-czmiss]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.czmiss,0,true);});
   if($('#goEasy'))$('#goEasy').onclick=()=>{const g=GMODES.easy(),a=MODES.easy();nav('drill');
     if(g.length)startSession(g,'쉬운 문제 훑기 · 가이드라인','guide');else startSession(a,'쉬운 문제 훑기 · ACCP','easy');};
   $('#goGDue').onclick=()=>{const ids=GMODES.dueSeen();
@@ -1192,7 +1206,7 @@ function roundSummary(){
 
 /* ================= CURRICULUM ================= */
 function renderCurriculum(){
-  DIGVIEW=null;
+  DIGVIEW=null; CZKEY=null;
   const c=currStats();
   const byStatus=s=>TOPICS.filter(t=>S.topics[t.id].status===s).length;
   let html=`
@@ -1296,8 +1310,85 @@ function addBlocks(d){
     ${(b.check&&b.check.length)?`<div class="dg-sec addcheck"><div class="sh">⚠ 원본 대비 확인 필요</div><ul>${b.check.map(p=>`<li>${esc(p)}</li>`).join('')}</ul></div>`:''}
     <div class="dgsrc">출처 · ${esc(b.src)}</div></div></details>`).join('');
 }
+
+/* ================= 빈칸 노트 ================= */
+let CZKEY=null, CZST=null;
+const CZ_PER=15;
+const CZ_DRUG=/\b(?:cef[a-z]+|ceph[a-z]+|[A-Za-z][a-z]*(?:cillin|mycin|micin|floxacin|conazole|azole|fungin|penem|cycline|bactam|planin|zolid|nidazole|vudine|tegravir|navir|buvir|asvir|previr|fovir|cavir|virine|virenz|amivir|ciclovir|clovir|butol|fampin|butin|quiline|manid|serine|zimine|tericin|cytosine|pentamidine|quone|primaquine|methoprim|sulfadiazine|pyrimethamine|sulbactam|tazobactam|avibactam|colistin|polymyxin|vancomycin|daptomycin|linezolid|tigecycline|aztreonam|fosfomycin|nitrofurantoin|rifaximin|ivermectin|oseltamivir|baloxavir|peramivir|zanamivir|remdesivir|nirmatrelvir|molnupiravir|ritonavir|cobicistat|isoniazid|pyrazinamide|ethambutol))\b/gi;
+const CZ_NUM=/(?:[≥≤<>]\s*)?\d[\d,.]*(?:\s*[~–\-]\s*\d[\d,.]*)?\s*(?:mg\/kg\/day|mg\/kg\/일|mg\/kg|mg\/일|mg|mcg|μg|g\/일|g|mL\/min(?:\/1\.73\s*m²)?|mL|IU\/mL|IU|U\/L|cells\/μL|cells\/mm³|mmHg|%|일|주|개월|시간|분|회|정|배|세|kg)(?![A-Za-z가-힣])|\bq\d+h\b|\b(?:qd|bid|tid|qid)\b/g;
+function czMarks(txt){
+  const hits=[];
+  const add=re=>{re.lastIndex=0;let m;while((m=re.exec(txt))){const a=m.index,b=a+m[0].length;
+    if(m[0].trim().length<2&&!/\d/.test(m[0]))continue;
+    if(!hits.some(h=>a<h.b&&b>h.a))hits.push({a,b});}};
+  add(CZ_NUM); add(CZ_DRUG);
+  hits.sort((x,y)=>x.a-y.a);
+  if(hits.length<=3)return hits;
+  const step=hits.length/3; return [0,1,2].map(i=>hits[Math.floor(i*step)]);
+}
+function czLines(topic){
+  const d=DIG_BY_TOPIC[topic]; if(!d)return [];
+  const out=[];
+  (d.summary||[]).forEach((sec,si)=>sec.points.forEach((pt,pi)=>out.push({k:'s'+si+'.'+pi,h:sec.h,t:pt})));
+  (d.tables||[]).forEach((T,ti)=>T.rows.forEach((r,ri)=>{
+    const t=r.map((c,ci)=>ci===0?c:((T.headers[ci]?T.headers[ci]+': ':'')+c)).join(' · ');
+    out.push({k:'t'+ti+'.'+ri,h:(T.title||'표').replace(/\s*\[출처:.*$/,''),t});}));
+  return out.map(L=>Object.assign(L,{m:czMarks(L.t)})).filter(L=>L.m.length);
+}
+function czStore(topic){S.cz=S.cz||{};return S.cz[topic]||(S.cz[topic]={miss:{},done:{}});}
+function czSets(topic){const n=czLines(topic).length;return Math.ceil(n/CZ_PER);}
+function renderCloze(topic,set,missOnly){
+  const d=DIG_BY_TOPIC[topic], t=TOPIC_BY[topic]; if(!d){toast('정리본이 없는 토픽이에요');return;}
+  if(VIEW!=='curriculum'){VIEW='curriculum';document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v==='curriculum'));}
+  DIGVIEW=null; tSet(topic);
+  const st=czStore(topic), all=czLines(topic), nset=Math.ceil(all.length/CZ_PER);
+  let lines;
+  if(missOnly){lines=all.filter(L=>st.miss[L.k]);}
+  else{set=Math.max(0,Math.min(set||0,nset-1)); lines=all.slice(set*CZ_PER,(set+1)*CZ_PER);}
+  CZKEY=topic+':'+(missOnly?'miss':set);
+  const nb=lines.reduce((a,L)=>a+L.m.length,0);
+  let lastH='';
+  const body=lines.map(L=>{
+    let html='',pos=0;
+    L.m.forEach((m,i)=>{const ans=L.t.slice(m.a,m.b);
+      html+=esc(L.t.slice(pos,m.a))+`<span class="czb" data-i="${i}" style="min-width:${Math.max(3,Math.min(16,ans.length*0.72+1))}em"><span class="cza">${esc(ans)}</span></span>`;pos=m.b;});
+    html+=esc(L.t.slice(pos));
+    const head=L.h!==lastH?`<div class="czh">${esc(L.h)}</div>`:''; lastH=L.h;
+    return `${head}<div class="czl" data-k="${L.k}"><div class="czt">${html}</div><button class="czm ${st.miss[L.k]?'on':''}" data-k="${L.k}">${st.miss[L.k]?'몰랐음 ✓':'몰랐음'}</button></div>`;}).join('');
+  const setBtns=missOnly?'':Array.from({length:nset},(_,i)=>`<button class="czs ${i===set?'on':''} ${st.done[i]?'dn':''}" data-s="${i}">${i+1}</button>`).join('');
+  const nMiss=Object.keys(st.miss).filter(k=>st.miss[k]).length;
+  app().innerHTML=`<div class="digest czwrap">
+    <button class="btn btn-ghost" id="czBack" style="margin-bottom:14px">← ${esc(t?t.name:topic)} 정리로</button>
+    <div class="card" style="padding:20px 22px">
+      <h2 style="margin:0 0 4px;font-size:20px">✍️ 빈칸 노트 · ${esc(t?t.name:topic)}${missOnly?' · 몰랐음만':''}</h2>
+      <div class="czinfo nohl">빈칸 ${nb}개 · 펜슬(✏️)로 빈칸에 직접 쓰고 → 빈칸을 누르면 정답 · 모르면 줄 끝 「몰랐음」</div>
+      ${setBtns?`<div class="czsets nohl">세트 ${setBtns}</div>`:''}
+      <div class="czbody">${body||'<div class="czinfo">「몰랐음」 표시한 줄이 없어요.</div>'}</div>
+      <div class="todo-actions nohl" style="margin-top:16px">
+        <button class="cta alt" id="czReveal">전체 정답 보기</button>
+        <button class="cta alt" id="czWipe">이 시트 필기 지우기</button>
+        ${!missOnly?`<button class="cta" id="czDone">이 세트 끝 ✓</button>`:''}
+        ${nMiss&&!missOnly?`<button class="cta alt" id="czMiss">몰랐음만 다시 <span class="n">${nMiss}</span></button>`:''}
+        ${missOnly?`<button class="cta alt" id="czAll">전체 세트로</button>`:''}
+      </div>
+      <div class="dgsrc nohl">원문 · ${esc(d.src)} (정리 페이지 「한눈에 핵심」·용량 표에서 약제명·수치만 가림)</div>
+    </div></div>`;
+  window.scrollTo(0,0);
+  const a=app();
+  a.querySelectorAll('.czb').forEach(b=>b.onclick=()=>b.classList.toggle('rv'));
+  a.querySelectorAll('.czm').forEach(b=>b.onclick=()=>{const k=b.dataset.k;st.miss[k]=!st.miss[k];if(!st.miss[k])delete st.miss[k];save();
+    b.classList.toggle('on',!!st.miss[k]);b.textContent=st.miss[k]?'몰랐음 ✓':'몰랐음';});
+  a.querySelectorAll('.czs').forEach(b=>b.onclick=()=>renderCloze(topic,+b.dataset.s,false));
+  $('#czBack').onclick=()=>{CZKEY=null;renderDigest(topic);};
+  $('#czReveal').onclick=()=>{const all=[...a.querySelectorAll('.czb')];const on=all.some(x=>!x.classList.contains('rv'));all.forEach(x=>x.classList.toggle('rv',on));};
+  $('#czWipe').onclick=()=>{try{INK.data[INK.page]=[];INK.save();INK.redraw();toast('이 시트의 필기를 지웠어요');}catch(e){}};
+  if($('#czDone'))$('#czDone').onclick=()=>{st.done[set]=Date.now();save();toast('세트 '+(set+1)+' 완료');
+    if(set+1<nset)renderCloze(topic,set+1,false);else renderCloze(topic,set,false);};
+  if($('#czMiss'))$('#czMiss').onclick=()=>renderCloze(topic,0,true);
+  if($('#czAll'))$('#czAll').onclick=()=>renderCloze(topic,0,false);
+}
 function renderDigest(topicId){
-  DIGVIEW=topicId; tSet(topicId);
+  DIGVIEW=topicId; CZKEY=null; tSet(topicId);
   const d=DIG_BY_TOPIC[topicId], t=TOPIC_BY[topicId];
   if(!d){renderCurriculum();return;}
   const gqs=GQ_BY_TOPIC[topicId]||[];
@@ -1343,6 +1434,7 @@ function renderDigest(topicId){
       ${addBlocks(d)}
     </div>
     <div class="todo-actions" style="margin-top:14px">
+      ${czSets(topicId)?`<button class="cta" id="dgCloze">✍️ 빈칸 노트 <span class="n">${czSets(topicId)}세트</span></button>`:''}
       ${gqs.length?`<button class="cta" id="dgQuiz">바로 자가점검 풀기 <span class="n">${gqs.length}</span></button>`:''}
       ${[...new Set(gqs.map(g=>g.grp).filter(Boolean))].map(gp=>{
         const n=gqs.filter(g=>g.grp===gp).length;
@@ -1351,6 +1443,7 @@ function renderDigest(topicId){
     </div></div>`;
   $('#dgBack').onclick=()=>renderCurriculum();
   $('#dgBack2').onclick=()=>renderCurriculum();
+  if($('#dgCloze'))$('#dgCloze').onclick=()=>{const st=czStore(topicId),n=czSets(topicId);let k=0;while(k<n-1&&st.done[k])k++;renderCloze(topicId,k,false);};
   if($('#dgNote'))$('#dgNote').oninput=e=>{if(S.topics[topicId]){S.topics[topicId].note=e.target.value;save();}};
   bindRounds();
   hlInit(app().querySelector('.digest'),'dg:'+topicId);
@@ -1718,11 +1811,13 @@ function renderDone(){
     <div class="big">${c}/${ids.length}</div><div class="sub">이번 세션 정답 · 진도 저장됨</div>
     ${SESS.solveN?`<div class="sub" style="margin-top:4px">풀이시간 ${Math.round(SESS.solveMs/60000)}분 · 문항당 평균 ${Math.round(SESS.solveMs/SESS.solveN/1000)}초 <span style="color:var(--faint)">(해설 읽는 시간 제외)</span></div>`:''}
     ${(SESS.title||'').indexOf('쉬운 문제 훑기 · 가이드라인')===0&&MODES.easy().length?`<div class="sub" style="margin-top:6px"><button class="btn btn-ghost" id="moreEasy">ACCP 쉬운 문제도 보기 (${MODES.easy().length})</button></div>`:''}
+    ${(isGuide()&&(()=>{const ts=[...new Set(ids.map(i=>(GQ_BY_ID[i]||{}).topic))];return ts.length===1&&czSets(ts[0]);})())?`<div class="sub" style="margin-top:10px"><button class="btn btn-primary" id="goCloze">✍️ 이 토픽 빈칸 노트로 (10분)</button></div>`:''}
     <div class="row">${(!isGuide()&&dueLeft)?`<button class="btn btn-primary" id="more">오늘 복습 이어서 (${dueLeft})</button>`:''}
       <button class="btn btn-ghost" id="back">드릴 홈</button>
       <button class="btn btn-ghost" id="home2">전체 홈</button></div></div>`;
   if(!isGuide()&&dueLeft)$('#more').onclick=()=>startSession(MODES.due(),'오늘의 복습','due');
   $('#back').onclick=()=>renderDrillHome(); $('#home2').onclick=()=>nav('home');
+  if($('#goCloze'))$('#goCloze').onclick=()=>{const tp=(GQ_BY_ID[ids[0]]||{}).topic,st=czStore(tp),n=czSets(tp);let k=0;while(k<n-1&&st.done[k])k++;nav('curriculum');renderCloze(tp,k,false);};
   if($('#moreEasy'))$('#moreEasy').onclick=()=>startSession(MODES.easy(),'쉬운 문제 훑기 · ACCP','easy');
 }
 
@@ -1796,6 +1891,9 @@ function mergeState(a,b){
     o.topics=R;}
   {const A=a.plan||{},B=b.plan||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]={done:!!((A[id]&&A[id].done)||(B[id]&&B[id].done))});o.plan=R;}
+  {const A=a.cz||{},B=b.cz||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(t=>{const x=A[t]||{},y=B[t]||{};
+      R[t]={miss:Object.assign({},y.miss||{},x.miss||{}),done:Object.assign({},y.done||{},x.done||{})};});o.cz=R;}
   {const A=a.mn||{},B=b.mn||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]=Math.max(A[id]||0,B[id]||0));o.mn=R;}
   {const A=a.hl||{},B=b.hl||{},R={};
@@ -2081,6 +2179,7 @@ const INK={
     if(t!=='off'&&!this.open){this.open=true;this.bar.classList.remove('hidden');}
   },
   pageKey(){
+    if(VIEW==='curriculum'&&CZKEY)return 'cz:'+CZKEY;
     if(VIEW==='curriculum'&&DIGVIEW)return 'dg:'+DIGVIEW;
     if(VIEW==='drill'&&SESS&&SESS.ids&&SESS.ids[SESS.pos]!=null)return 'q:'+SESS.kind+':'+SESS.ids[SESS.pos];
     return VIEW;
