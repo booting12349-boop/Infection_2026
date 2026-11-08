@@ -1409,10 +1409,21 @@ function czOk1(inp,ans){const a=czSyn(czNorm0(ans)),b=czSyn(czNorm0(inp));if(!b)
   return core(a)!==''&&core(a)===core(b);}
 function czMode(){try{return localStorage.getItem('idpc_czmode')||'pen';}catch(e){return 'pen';}}
 function czSetMode(m){try{localStorage.setItem('idpc_czmode',m);}catch(e){}}
-function czStore(topic){S.cz=S.cz||{};const o=S.cz[topic]||(S.cz[topic]={miss:{},done:{},star:{},log:{}});o.star=o.star||{};o.log=o.log||{};return o;}
+/* 빈칸 세트 재편 이관: 줄 구성이 바뀐 토픽은, 새 세트의 모든 줄이 예전에 완료한 세트에 들어 있었을 때만 완료로 옮긴다 */
+const CZ_MIG={tdm:{v:2,per:15,old:["s0.0", "s0.1", "s0.2", "s1.1", "s1.2", "s2.0", "s2.1", "s2.2", "s2.3", "s2.4", "s2.5", "s3.0", "s3.2", "s3.3", "s3.7", "s3.8", "s4.0", "s4.1", "s4.2", "s4.3", "s4.4", "s5.2", "s5.4", "s6.0", "s6.1", "s6.2", "s6.3", "s6.4", "s7.0", "s7.1", "s7.2", "s7.3", "s7.4", "s7.5", "s7.6", "s8.0", "s8.1", "s8.2", "s8.3", "s8.4", "s8.5", "s8.6", "s9.0", "s9.1", "s10.0", "s10.1", "s10.2", "s10.3", "t0.0", "t0.1", "t0.2", "t0.3", "t1.0", "t1.1", "t2.0", "t2.1", "t2.2", "t2.3", "t2.4", "t2.5", "t2.6", "t2.7", "t3.0", "t3.1", "t3.3", "t3.5", "t4.1", "t4.2", "t4.4", "t4.5", "t5.5", "t5.6", "t5.7", "t5.8", "t6.0", "t6.1", "t6.2", "t6.3", "t7.0", "t7.1", "t7.2", "t7.3", "t8.0", "t8.4", "t8.5", "t9.0", "t9.1", "t9.2", "t9.3", "t9.4", "t9.5", "t9.6", "t9.7", "t9.8", "t9.9", "t10.0", "t10.1", "t10.2", "t10.3", "t10.4", "t10.5", "t10.6", "t11.0", "t11.1", "t11.2", "t11.3", "t12.0", "t12.1", "t12.2", "t12.3", "t12.4", "t13.0", "t13.1", "t13.3", "t13.4"]}};
+function czMig(topic){const M=CZ_MIG[topic];const o=S&&S.cz&&S.cz[topic];if(!M||!o||o._v===M.v)return;
+  try{const od=o.done||{},ok={},ts={};
+    Object.keys(od).forEach(i=>{M.old.slice(+i*M.per,(+i+1)*M.per).forEach(k=>{ok[k]=1;ts[k]=Math.max(ts[k]||0,od[i]);});});
+    const L=czLines(topic),nd={};
+    for(let i=0;i*CZ_PER<L.length;i++){const ks=L.slice(i*CZ_PER,(i+1)*CZ_PER).map(x=>x.k);
+      if(ks.length&&ks.every(k=>ok[k]))nd[i]=Math.max(...ks.map(k=>ts[k]));}
+    const lg=o.log||{},agg={ok:0,n:0,cnt:0,ts:0};Object.values(lg).forEach(l=>{agg.ok+=l.ok||0;agg.n+=l.n||0;agg.cnt+=l.cnt||0;agg.ts=Math.max(agg.ts,l.ts||0);});
+    o.done=nd; o.log=agg.n?{v1:agg}:{}; o._v=M.v;
+  }catch(e){}}
+function czStore(topic){S.cz=S.cz||{};const o=S.cz[topic]||(S.cz[topic]={miss:{},done:{},star:{},log:{}});czMig(topic);o.star=o.star||{};o.log=o.log||{};return o;}
 function topicProg(tid){
   const gqs=GQ_BY_TOPIC[tid]||[], qn=gqs.length, qd=gqs.filter(g=>S.gq[g.id]&&S.gq[g.id].seen>0).length;
-  const cn=czSets(tid), st=(S.cz&&S.cz[tid])||{done:{},log:{}};
+  czMig(tid); const cn=czSets(tid), st=(S.cz&&S.cz[tid])||{done:{},log:{}};
   const cd=Object.keys(st.done||{}).filter(k=>+k<cn).length;
   let ok=0,n=0; Object.values(st.log||{}).forEach(l=>{ok+=l.ok||0;n+=l.n||0;});
   return {qn,qd,cn,cd,acc:n?Math.round(ok/n*100):null,full:qn>0&&qd>=qn&&(cn===0||cd>=cn)};
