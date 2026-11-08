@@ -514,6 +514,8 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
 .czst{font-size:16px;line-height:1;padding:3px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--amber,#c47b08);cursor:pointer}
 .czst.on{background:var(--amber,#c47b08);color:#fff;border-color:transparent}
 .czl .czm{margin-top:0}
+.czprog{font-size:13px;color:var(--muted);margin:2px 0 10px}
+.czs small{font-size:10px;opacity:.8}
 </style>
 </head>
 <body>
@@ -588,7 +590,7 @@ async function load(){
 const WRONG_EXIT=5; // 틀린 뒤 이만큼 맞히면 오답노트에서 빠짐
 function inWrong(s){return !!(s&&s.wl===1);}
 let saveT=null;
-function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{if(SYNC.on&&!SYNC.applying)S._ts=Date.now();try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}if(SYNC.on&&!SYNC.applying)SYNC.push();},150);}
+function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{try{S.prog=Object.fromEntries(TOPICS.map(t=>{const p=topicProg(t.id);return [t.id,{qd:p.qd,qn:p.qn,cd:p.cd,cn:p.cn,acc:p.acc,full:p.full}];}));}catch(e){}if(SYNC.on&&!SYNC.applying)S._ts=Date.now();try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}if(SYNC.on&&!SYNC.applying)SYNC.push();},150);}
 
 const $=s=>document.querySelector(s);
 const app=()=>$('#app');
@@ -1300,7 +1302,7 @@ function topicCard(t){
     <div class="topic-head" data-toggle="${t.id}">
       <span class="tstat ${statusCls}"></span>
       <span class="tn">${esc(t.name)}</span>
-      <span class="tmeta">${roundBadge(t.id)}${revBadge}${hasDig?`<span class="badge" style="color:var(--teal-d);background:var(--teal-wash)">정리${(DIG_BY_TOPIC[t.id].tables&&DIG_BY_TOPIC[t.id].tables.length)?'·표 '+DIG_BY_TOPIC[t.id].tables.length:''}</span>`:''}${gqs.length?`<span class="badge" style="color:var(--kr);background:var(--kr-wash)">점검 ${gqs.length}</span>`:''}${caseBadge}<span class="chev">▸</span></span>
+      <span class="tmeta">${progBadge(t.id)}${roundBadge(t.id)}${revBadge}${hasDig?`<span class="badge" style="color:var(--teal-d);background:var(--teal-wash)">정리${(DIG_BY_TOPIC[t.id].tables&&DIG_BY_TOPIC[t.id].tables.length)?'·표 '+DIG_BY_TOPIC[t.id].tables.length:''}</span>`:''}${gqs.length?`<span class="badge" style="color:var(--kr);background:var(--kr-wash)">점검 ${gqs.length}</span>`:''}${caseBadge}<span class="chev">▸</span></span>
     </div>
     <div class="topic-body">
       <div class="statusbtns" data-statusfor="${t.id}">
@@ -1379,8 +1381,18 @@ function czOk1(inp,ans){const a=czSyn(czNorm0(ans)),b=czSyn(czNorm0(inp));if(!b)
   return core(a)!==''&&core(a)===core(b);}
 function czMode(){try{return localStorage.getItem('idpc_czmode')||'pen';}catch(e){return 'pen';}}
 function czSetMode(m){try{localStorage.setItem('idpc_czmode',m);}catch(e){}}
-function czStore(topic){S.cz=S.cz||{};const o=S.cz[topic]||(S.cz[topic]={miss:{},done:{},star:{}});o.star=o.star||{};return o;}
-function czSets(topic){const n=czLines(topic).length;return Math.ceil(n/CZ_PER);}
+function czStore(topic){S.cz=S.cz||{};const o=S.cz[topic]||(S.cz[topic]={miss:{},done:{},star:{},log:{}});o.star=o.star||{};o.log=o.log||{};return o;}
+function topicProg(tid){
+  const gqs=GQ_BY_TOPIC[tid]||[], qn=gqs.length, qd=gqs.filter(g=>S.gq[g.id]&&S.gq[g.id].seen>0).length;
+  const cn=czSets(tid), st=(S.cz&&S.cz[tid])||{done:{},log:{}};
+  const cd=Object.keys(st.done||{}).filter(k=>+k<cn).length;
+  let ok=0,n=0; Object.values(st.log||{}).forEach(l=>{ok+=l.ok||0;n+=l.n||0;});
+  return {qn,qd,cn,cd,acc:n?Math.round(ok/n*100):null,full:qn>0&&qd>=qn&&(cn===0||cd>=cn)};
+}
+function progBadge(tid){const p=topicProg(tid);if(!p.qn&&!p.cn)return '';
+  return `<span class="badge" style="${p.full?'color:#fff;background:var(--teal)':'color:var(--ink);background:var(--line)'}" title="문제풀이 + 빈칸 노트 = 1세트">${p.full?'1세트 완료 ✓':`풀이 ${p.qd}/${p.qn}${p.cn?` · 빈칸 ${p.cd}/${p.cn}`:''}`}</span>`;}
+const CZ_NSET={};
+function czSets(topic){if(CZ_NSET[topic]==null)CZ_NSET[topic]=Math.ceil(czLines(topic).length/CZ_PER);return CZ_NSET[topic];}
 function renderCloze(topic,set,missOnly){
   const d=DIG_BY_TOPIC[topic], t=TOPIC_BY[topic]; if(!d){toast('정리본이 없는 토픽이에요');return;}
   if(VIEW!=='curriculum'){VIEW='curriculum';document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v==='curriculum'));}
@@ -1404,7 +1416,7 @@ function renderCloze(topic,set,missOnly){
     html+=esc(L.t.slice(pos));
     const head=L.h!==lastH?`<div class="czh">${esc(L.h)}</div>`:''; lastH=L.h;
     return `${head}<div class="czl" data-k="${L.k}" data-t="${escA(L.t)}"><div class="czt">${html}</div><div class="czbtns"><button class="czst ${st.star[L.k]?'on':''}" data-k="${L.k}" title="별표">${st.star[L.k]?'★':'☆'}</button><button class="czm ${st.miss[L.k]?'on':''}" data-k="${L.k}">${st.miss[L.k]?'몰랐음 ✓':'몰랐음'}</button></div></div>`;}).join('');
-  const setBtns=missOnly?'':Array.from({length:nset},(_,i)=>`<button class="czs ${i===set?'on':''} ${st.done[i]?'dn':''}" data-s="${i}">${i+1}</button>`).join('');
+  const setBtns=missOnly?'':Array.from({length:nset},(_,i)=>`<button class="czs ${i===set?'on':''} ${st.done[i]?'dn':''}" data-s="${i}" title="${st.log[i]?'최근 '+st.log[i].ok+'/'+st.log[i].n+' · '+st.log[i].cnt+'회 채점':''}">${i+1}${st.log[i]?`<small> ${Math.round(st.log[i].ok/st.log[i].n*100)}%</small>`:''}</button>`).join('');
   const nMiss=Object.keys(st.miss).filter(k=>st.miss[k]).length, nStar=Object.keys(st.star).filter(k=>st.star[k]).length;
   app().innerHTML=`<div class="digest czwrap">
     <button class="btn btn-ghost" id="czBack" style="margin-bottom:14px">← ${esc(t?t.name:topic)} 정리로</button>
@@ -1449,6 +1461,7 @@ function renderCloze(topic,set,missOnly){
         const k=row.dataset.k, mb=row.querySelector('.czm');
         if(bad){st.miss[k]=true;mb.classList.add('on');mb.textContent='몰랐음 ✓';}
         else if(missOnly===true&&st.miss[k]){delete st.miss[k];mb.classList.remove('on');mb.textContent='몰랐음';}});
+      if(!missOnly&&tried){const l=st.log[set]||{cnt:0};st.log[set]={ts:Date.now(),ok,n:tried,cnt:(l.cnt||0)+1};}
       save(); $('#czScore').textContent=ok+' / '+tried+' 정답'+(tried<ins.length?' (안 쓴 줄 '+Math.round((ins.length-tried))+'칸은 채점 안 함)':'')+(missOnly?' · 다 맞힌 줄은 몰랐음에서 빠짐':'');};
     if(ins[0])setTimeout(()=>ins[0].focus(),50);
   }
@@ -1484,6 +1497,7 @@ function renderDigest(topicId){
     <button class="btn btn-ghost" id="dgBack" style="margin-bottom:14px">← 출제범위로</button>
     <div class="card" style="padding:20px 22px">
       <h2 style="margin:0 0 2px;font-size:20px">${esc(d.title)}</h2>
+      ${(()=>{const p=topicProg(topicId);return `<div class="czprog nohl">${p.full?'✓ 이 토픽 1세트 완료 · ':''}문제풀이 ${p.qd}/${p.qn}${p.cn?` · 빈칸 노트 ${p.cd}/${p.cn}세트`:''}${p.acc!=null?` · 빈칸 채점 정답률 ${p.acc}%`:''}</div>`;})()}
       <div class="dg-h" style="margin-top:0">한눈에 핵심</div>
       ${sums}
       <div class="dg-h">의사결정 도식</div>
@@ -1969,7 +1983,8 @@ function mergeState(a,b){
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]={done:!!((A[id]&&A[id].done)||(B[id]&&B[id].done))});o.plan=R;}
   {const A=a.cz||{},B=b.cz||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(t=>{const x=A[t]||{},y=B[t]||{};
-      R[t]={miss:Object.assign({},y.miss||{},x.miss||{}),done:Object.assign({},y.done||{},x.done||{}),star:Object.assign({},y.star||{},x.star||{})};});o.cz=R;}
+      R[t]={miss:Object.assign({},y.miss||{},x.miss||{}),done:Object.assign({},y.done||{},x.done||{}),star:Object.assign({},y.star||{},x.star||{}),
+        log:(()=>{const L=Object.assign({},y.log||{});Object.entries(x.log||{}).forEach(([k,v])=>{if(!L[k]||(v.ts||0)>=(L[k].ts||0))L[k]=v;});return L;})()};});o.cz=R;}
   {const A=a.mn||{},B=b.mn||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]=Math.max(A[id]||0,B[id]||0));o.mn=R;}
   {const A=a.hl||{},B=b.hl||{},R={};
