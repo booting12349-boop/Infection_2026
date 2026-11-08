@@ -497,6 +497,8 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
 .czb{display:inline-block;height:1.75em;vertical-align:middle;border-bottom:2px solid var(--ink);margin:0 3px;cursor:pointer;position:relative;text-align:center}
 .czb .cza{visibility:hidden;color:var(--kr);font-weight:700;line-height:1.75em;white-space:nowrap}
 .czb.rv{background:rgba(196,123,8,.08)}.czb.rv .cza{visibility:visible}
+.czb .czhn{position:absolute;left:0;right:0;bottom:-1.25em;font-size:10px;line-height:1;color:var(--muted,#999);opacity:.7;pointer-events:none;white-space:nowrap}.czb.rv .czhn{display:none}
+.czi::placeholder{font-size:11px;color:#aaa}
 .czm{flex:0 0 auto;font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;margin-top:6px}
 .czm.on{background:var(--bad,#c0392b);color:#fff;border-color:transparent}
 .czmode{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle}
@@ -1334,18 +1336,41 @@ function addBlocks(d){
 let CZKEY=null, CZST=null;
 const CZ_PER=15;
 const CZ_DRUG=/\b(?:cef[a-z]+|ceph[a-z]+|[A-Za-z][a-z]*(?:cillin|mycin|micin|floxacin|conazole|azole|fungin|penem|cycline|bactam|planin|zolid|nidazole|vudine|tegravir|navir|buvir|asvir|previr|fovir|cavir|virine|virenz|amivir|ciclovir|clovir|butol|fampin|butin|quiline|manid|serine|zimine|tericin|cytosine|pentamidine|quone|primaquine|methoprim|sulfadiazine|pyrimethamine|sulbactam|tazobactam|avibactam|colistin|polymyxin|vancomycin|daptomycin|linezolid|tigecycline|aztreonam|fosfomycin|nitrofurantoin|rifaximin|ivermectin|oseltamivir|baloxavir|peramivir|zanamivir|remdesivir|nirmatrelvir|molnupiravir|ritonavir|cobicistat|isoniazid|pyrazinamide|ethambutol))\b/gi;
-const CZ_NUM=/(?:[≥≤<>]\s*)?\d[\d,.]*(?:\s*[~–\-]\s*\d[\d,.]*)?\s*(?:mg\/kg\/day|mg\/kg\/일|mg\/kg|mg\/일|mg|mcg|μg|g\/일|g|mL\/min(?:\/1\.73\s*m²)?|mL|IU\/mL|IU|U\/L|cells\/μL|cells\/mm³|mmHg|%|일|주|개월|시간|분|회|정|배|세|kg)(?![A-Za-z가-힣])|\bq\d+h\b|\b(?:qd|bid|tid|qid)\b/g;
+const CZ_NUM=/(?:[≥≤<>]\s*)?\d[\d,.]*(?:\s*(?:[~–\-]|to)\s*\d[\d,.]*)?\s*(?:mg\/kg\/day|mg\/kg\/일|mg\/kg|mg\/일|mg|mcg|μg|g\/일|g|mL\/min(?:\/1\.73\s*m²)?|mL|IU\/mL|IU|U\/L|cells\/μL|cells\/mm³|mmHg|%|일|주|개월|시간|분|회|정|배|세|kg)(?![A-Za-z가-힣])|\bq\d+h\b|\b(?:qd|bid|tid|qid)\b/g;
 function czMarks(txt){
+  /* 빈칸 선정 v2: 줄당 최대 2칸 · 단위는 칸 밖 · 칸끼리 붙지 않게 · 예제의 주어진 조건은 가리지 않음 · 수치가 있으면 약제명은 가리지 않음 */
   const hits=[];
-  const add=re=>{re.lastIndex=0;let m;while((m=re.exec(txt))){let a=m.index;const b=a+m[0].length;
+  const arrow=/=|\bx\b/.test(txt)&&txt.lastIndexOf('→')>=0?txt.lastIndexOf('→'):-1;
+  const add=(re,kind)=>{re.lastIndex=0;let m;while((m=re.exec(txt))){let a=m.index;let b=a+m[0].length;
     const cm=m[0].match(/^[≥≤<>]\s*/); if(cm)a+=cm[0].length;
     if(m[0].trim().length<2&&!/\d/.test(m[0]))continue;
-    if(!hits.some(h=>a<h.b&&b>h.a))hits.push({a,b});}};
-  add(CZ_NUM); add(CZ_DRUG);
+    const pre=a<arrow;
+    let k=kind;
+    if(kind==='num'){const seg=txt.slice(a,b);
+      if(/^q\d+h$|^(?:qd|bid|tid|qid)$/i.test(seg))k='freq';
+      else{const nm=seg.match(/^\d[\d,.]*(?:\s*(?:[~–\-]|to)\s*\d[\d,.]*)?/);
+        if(nm){const unit=seg.slice(nm[0].length).trim();
+          if(/^1$/.test(nm[0])&&/^(일|회|주|개월|시간|정|배)$/.test(unit))k='idiom'; /* '1일 총량'·'1일 1회' 같은 관용구는 다른 칸이 없을 때만 */
+          b=a+nm[0].length;}}}
+    if(!hits.some(h=>a<h.b&&b>h.a))hits.push({a,b,k,pre});}};
+  add(CZ_NUM,'num'); add(CZ_DRUG,'drug');
   hits.sort((x,y)=>x.a-y.a);
-  if(hits.length<=3)return hits;
-  const step=hits.length/3; return [0,1,2].map(i=>hits[Math.floor(i*step)]);
+  const post=hits.filter(h=>!h.pre), base=post.length?post:hits;
+  let pool=base.some(h=>h.k!=='idiom')?base.filter(h=>h.k!=='idiom'):base;
+  pool=pool.some(h=>h.k!=='drug')?pool.filter(h=>h.k!=='drug'):pool;
+  const pick=[];
+  const far=(h)=>pick.every(p=>{const gap=h.a>p.b?txt.slice(p.b,h.a):txt.slice(h.b,p.a);return gap.replace(/[\s·,:;()\/~–\-]/g,'').length>=2;});
+  const MAX=Math.min(2,pool.length);
+  const sc=h=>{if(h.k!=='num')return h.k==='freq'?1:2;const u=txt.slice(h.b,h.b+12).trim();
+    return /^(mg|mcg|μg|g|IU)/.test(u)?0:/^(시간|분|일|주|%|배|회)/.test(u)?1:2;};
+  const best=Math.min(...pool.map(sc));
+  const first=pool.find(h=>sc(h)===best); if(first)pick.push(first);
+  const rest=pool.filter(h=>h!==first&&far(h)).sort((x,y)=>sc(x)-sc(y)||Math.abs(y.a-first.a)-Math.abs(x.a-first.a));
+  if(pick.length<MAX&&rest.length)pick.push(rest[0]);
+  if(!pick.length&&hits.length)pick.push(hits[hits.length-1]);
+  return pick.sort((x,y)=>x.a-y.a);
 }
+const CZ_HINT={num:'수치',drug:'약제',freq:'간격',idiom:'수치'};
 function czLines(topic){
   const d=DIG_BY_TOPIC[topic]; if(!d)return [];
   const out=[];
@@ -1363,7 +1388,7 @@ function czSyn(t){for(const g of CZ_SYN.concat(CZ_FREQ)){const n=g.map(czNorm0);
   if((m=t.match(/^([\d.]+)주$/)))return (+m[1]*7)+'일';
   if((m=t.match(/^([\d.]+)시간$/))&&(+m[1])%24===0)return (+m[1]/24)+'일';
   return t;}
-function czNorm0(x){return String(x||'').toLowerCase().normalize('NFKC').replace(/(\d)\s*[-–—~∼]\s*(\d)/g,'$1-$2').replace(/(\d)\s+(\d)/g,'$1-$2')
+function czNorm0(x){return String(x||'').toLowerCase().normalize('NFKC').replace(/(\d)\s*to\s*(\d)/g,'$1-$2').replace(/(\d)\s*[-–—~∼]\s*(\d)/g,'$1-$2').replace(/(\d)\s+(\d)/g,'$1-$2')
   .replace(/[\s,]/g,'').replace(/μ/g,'u').replace(/mcg/g,'ug').replace(/[()·]/g,'').replace(/(이상|초과|이하|미만|이내)$/,'');}
 function czAlt(line,ans){const out=[ans];
   const re1=/(\d+)\s*(정|캡슐|cap)\s*\(\s*([\d,.]+)\s*(mg|g)\s*\)/gi, re2=/([\d,.]+)\s*(mg|g)\s*\(\s*(?:1회\s*)?(\d+)\s*(정|캡슐|cap)\s*\)/gi;
@@ -1411,8 +1436,8 @@ function renderCloze(topic,set,missOnly){
     let html='',pos=0;
     L.m.forEach((m,i)=>{const ans=L.t.slice(m.a,m.b);
       html+=esc(L.t.slice(pos,m.a))+(TYPE
-        ?`<span class="czw"><input class="czi" data-ans="${escA(ans)}" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:${Math.max(4,Math.min(18,ans.length*0.78+1.5))}em"><span class="czr">${esc(ans)}</span></span>`
-        :`<span class="czb" data-i="${i}" style="min-width:${Math.max(3,Math.min(16,ans.length*0.72+1))}em"><span class="cza">${esc(ans)}</span></span>`);pos=m.b;});
+        ?`<span class="czw"><input class="czi" placeholder="${CZ_HINT[m.k]||''}" data-ans="${escA(ans)}" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:${Math.max(4,Math.min(18,ans.length*0.78+1.5))}em"><span class="czr">${esc(ans)}</span></span>`
+        :`<span class="czb" data-i="${i}" style="min-width:${Math.max(3,Math.min(16,ans.length*0.72+1))}em"><span class="czhn">${CZ_HINT[m.k]||''}</span><span class="cza">${esc(ans)}</span></span>`);pos=m.b;});
     html+=esc(L.t.slice(pos));
     const head=L.h!==lastH?`<div class="czh">${esc(L.h)}</div>`:''; lastH=L.h;
     return `${head}<div class="czl" data-k="${L.k}" data-t="${escA(L.t)}"><div class="czt">${html}</div><div class="czbtns"><button class="czst ${st.star[L.k]?'on':''}" data-k="${L.k}" title="별표">${st.star[L.k]?'★':'☆'}</button><button class="czm ${st.miss[L.k]?'on':''}" data-k="${L.k}">${st.miss[L.k]?'몰랐음 ✓':'몰랐음'}</button></div></div>`;}).join('');
@@ -1435,7 +1460,7 @@ function renderCloze(topic,set,missOnly){
         ${nStar&&!STAR?`<button class="cta alt" id="czStar">★ 별표만 <span class="n">${nStar}</span></button>`:''}
         ${missOnly?`<button class="cta alt" id="czAll">전체 세트로</button>`:''}
       </div>
-      <div class="dgsrc nohl">원문 · ${esc(d.src)} (정리 페이지 「한눈에 핵심」·용량 표에서 약제명·수치만 가림)</div>
+      <div class="dgsrc nohl">원문 · ${esc(d.src)} (정리 페이지 「한눈에 핵심」·용량 표에서 줄마다 핵심 수치(없으면 약제명) 최대 2칸만 가림 · 단위는 칸 밖에 표시)</div>
     </div></div>`;
   window.scrollTo(0,0);
   const a=app();
