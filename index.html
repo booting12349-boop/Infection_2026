@@ -1335,9 +1335,16 @@ function addBlocks(d){
 /* ================= 빈칸 노트 ================= */
 let CZKEY=null, CZST=null;
 const CZ_PER=15;
+/* 빈칸 난이도(하/중/상): 상 = 줄당 최대 2칸 · 중 = 줄당 1칸(가장 핵심 수치) · 하 = 중 + 첫 글자 힌트.
+   줄·세트 구성은 같아 몰랐음·별표는 공유, 세트 완료·채점 기록은 하(doneL/logL)·중(doneM/logM)을 따로 보관하고 공식 진도는 상 기준 */
+const CZ_LV_TOPICS=new Set(['tdm','travel','onco']);
+const CZ_LV_NAME={lo:'하',mid:'중',hi:'상'};
+function czLv(topic){if(!CZ_LV_TOPICS.has(topic))return 'hi';let v;try{v=localStorage.getItem('idpc_czlv_'+topic);}catch(e){}return CZ_LV_NAME[v]?v:'lo';}
+function czSetLv(topic,v){try{localStorage.setItem('idpc_czlv_'+topic,v);}catch(e){}}
+function czHint1(ans){const c=String(ans).trim().charAt(0);return c?c+'…':'';}
 const CZ_DRUG=/\b(?:cef[a-z]+|ceph[a-z]+|[A-Za-z][a-z]*(?:cillin|mycin|micin|floxacin|conazole|azole|fungin|penem|cycline|bactam|planin|zolid|nidazole|vudine|tegravir|navir|buvir|asvir|previr|fovir|cavir|virine|virenz|amivir|ciclovir|clovir|butol|fampin|butin|quiline|manid|serine|zimine|tericin|cytosine|pentamidine|quone|primaquine|methoprim|sulfadiazine|pyrimethamine|sulbactam|tazobactam|avibactam|colistin|polymyxin|vancomycin|daptomycin|linezolid|tigecycline|aztreonam|fosfomycin|nitrofurantoin|rifaximin|ivermectin|oseltamivir|baloxavir|peramivir|zanamivir|remdesivir|nirmatrelvir|molnupiravir|ritonavir|cobicistat|isoniazid|pyrazinamide|ethambutol))\b/gi;
 const CZ_NUM=/(?:[≥≤<>]\s*)?\d[\d,.]*(?:\s*(?:[~–\-]|to)\s*\d[\d,.]*)?\s*(?:mg\/kg\/day|mg\/kg\/일|mg\/kg|mg\/일|mg|mcg|μg|g\/일|g|mL\/min(?:\/1\.73\s*m²)?|mL|IU\/mL|IU|U\/L|cells\/μL|cells\/mm³|mmHg|%|일|주|개월|시간|분|회|정|배|세|kg)(?![A-Za-z가-힣])|\bq\d+h\b|\b(?:qd|bid|tid|qid)\b/g;
-function czMarks(txt){
+function czMarks(txt,maxN){
   /* 빈칸 선정 v2: 줄당 최대 2칸 · 단위는 칸 밖 · 칸끼리 붙지 않게 · 예제의 주어진 조건은 가리지 않음 · 수치가 있으면 약제명은 가리지 않음 */
   const hits=[];
   const arrow=/=|\bx\b/.test(txt)&&txt.lastIndexOf('→')>=0?txt.lastIndexOf('→'):-1;
@@ -1360,7 +1367,7 @@ function czMarks(txt){
   pool=pool.some(h=>h.k!=='drug')?pool.filter(h=>h.k!=='drug'):pool;
   const pick=[];
   const far=(h)=>pick.every(p=>{const gap=h.a>p.b?txt.slice(p.b,h.a):txt.slice(h.b,p.a);return gap.replace(/[\s·,:;()\/~–\-]/g,'').length>=2;});
-  const MAX=Math.min(2,pool.length);
+  const MAX=Math.min(maxN||2,pool.length);
   const sc=h=>{if(h.k!=='num')return h.k==='freq'?1:2;const u=txt.slice(h.b,h.b+12).trim();
     return /^(mg|mcg|μg|g|IU)/.test(u)?0:/^(시간|분|일|주|%|배|회)/.test(u)?1:2;};
   const best=Math.min(...pool.map(sc));
@@ -1442,7 +1449,11 @@ function renderCloze(topic,set,missOnly){
   if(STAR){lines=all.filter(L=>st.star[L.k]);}
   else if(missOnly){lines=all.filter(L=>st.miss[L.k]);}
   else{set=Math.max(0,Math.min(set||0,nset-1)); lines=all.slice(set*CZ_PER,(set+1)*CZ_PER);}
-  CZKEY=topic+':'+(STAR?'star':missOnly?'miss':set);
+  const LVON=CZ_LV_TOPICS.has(topic), LV=czLv(topic), MID=LV!=='hi', HINT=LV==='lo';
+  if(MID)lines=lines.map(L=>Object.assign({},L,{m:czMarks(L.t,1)}));
+  st.doneM=st.doneM||{}; st.logM=st.logM||{}; st.doneL=st.doneL||{}; st.logL=st.logL||{};
+  const DONE=LV==='lo'?st.doneL:LV==='mid'?st.doneM:st.done, LOG=LV==='lo'?st.logL:LV==='mid'?st.logM:st.log;
+  CZKEY=topic+':'+(STAR?'star':missOnly?'miss':set)+(MID?':'+LV:'');
   const nb=lines.reduce((a,L)=>a+L.m.length,0);
   const TYPE=czMode()==='type';
   let lastH='';
@@ -1450,18 +1461,19 @@ function renderCloze(topic,set,missOnly){
     let html='',pos=0;
     L.m.forEach((m,i)=>{const ans=L.t.slice(m.a,m.b);
       html+=esc(L.t.slice(pos,m.a))+(TYPE
-        ?`<span class="czw"><input class="czi" placeholder="${CZ_HINT[m.k]||''}" data-ans="${escA(ans)}" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:${Math.max(4,Math.min(18,ans.length*0.78+1.5))}em"><span class="czr">${esc(ans)}</span></span>`
-        :`<span class="czb" data-i="${i}" style="min-width:${Math.max(3,Math.min(16,ans.length*0.72+1))}em"><span class="czhn">${CZ_HINT[m.k]||''}</span><span class="cza">${esc(ans)}</span></span>`);pos=m.b;});
+        ?`<span class="czw"><input class="czi" placeholder="${HINT?czHint1(ans)+' '+(CZ_HINT[m.k]||''):(CZ_HINT[m.k]||'')}" data-ans="${escA(ans)}" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:${Math.max(4,Math.min(18,ans.length*0.78+1.5))}em"><span class="czr">${esc(ans)}</span></span>`
+        :`<span class="czb" data-i="${i}" style="min-width:${Math.max(3,Math.min(16,ans.length*0.72+1))}em"><span class="czhn">${HINT?czHint1(ans)+' ':''}${CZ_HINT[m.k]||''}</span><span class="cza">${esc(ans)}</span></span>`);pos=m.b;});
     html+=esc(L.t.slice(pos));
     const head=L.h!==lastH?`<div class="czh">${esc(L.h)}</div>`:''; lastH=L.h;
     return `${head}<div class="czl" data-k="${L.k}" data-t="${escA(L.t)}"><div class="czt">${html}</div><div class="czbtns"><button class="czst ${st.star[L.k]?'on':''}" data-k="${L.k}" title="별표">${st.star[L.k]?'★':'☆'}</button><button class="czm ${st.miss[L.k]?'on':''}" data-k="${L.k}">${st.miss[L.k]?'몰랐음 ✓':'몰랐음'}</button></div></div>`;}).join('');
-  const setBtns=missOnly?'':Array.from({length:nset},(_,i)=>`<button class="czs ${i===set?'on':''} ${st.done[i]?'dn':''}" data-s="${i}" title="${st.log[i]?'최근 '+st.log[i].ok+'/'+st.log[i].n+' · '+st.log[i].cnt+'회 채점':''}">${i+1}${st.log[i]?`<small> ${Math.round(st.log[i].ok/st.log[i].n*100)}%</small>`:''}</button>`).join('');
+  const setBtns=missOnly?'':Array.from({length:nset},(_,i)=>`<button class="czs ${i===set?'on':''} ${DONE[i]?'dn':''}" data-s="${i}" title="${LOG[i]?'최근 '+LOG[i].ok+'/'+LOG[i].n+' · '+LOG[i].cnt+'회 채점':''}">${i+1}${LOG[i]?`<small> ${Math.round(LOG[i].ok/LOG[i].n*100)}%</small>`:''}</button>`).join('');
   const nMiss=Object.keys(st.miss).filter(k=>st.miss[k]).length, nStar=Object.keys(st.star).filter(k=>st.star[k]).length;
   app().innerHTML=`<div class="digest czwrap">
     <button class="btn btn-ghost" id="czBack" style="margin-bottom:14px">← ${esc(t?t.name:topic)} 정리로</button>
     <div class="card" style="padding:20px 22px">
       <h2 style="margin:0 0 4px;font-size:20px">✍️ 빈칸 노트 · ${esc(t?t.name:topic)}${STAR?' · ★ 별표만':missOnly?' · 몰랐음만':''}</h2>
-      <div class="czinfo nohl">빈칸 ${nb}개 · ${TYPE?'빈칸에 입력(Enter=다음 칸) → 「채점」 · 틀린 줄은 자동으로 「몰랐음」':'펜슬(✏️)로 빈칸에 직접 쓰고 → 빈칸을 누르면 정답 · 모르면 줄 끝 「몰랐음」'}
+      <div class="czinfo nohl">${LVON?({lo:'난이도 하 · 줄당 1칸 + 첫 글자 힌트 · ',mid:'난이도 중 · 줄당 1칸 · ',hi:'난이도 상 · 줄당 최대 2칸 · 공식 진도 · '})[LV]:''}빈칸 ${nb}개 · ${TYPE?'빈칸에 입력(Enter=다음 칸) → 「채점」 · 틀린 줄은 자동으로 「몰랐음」':'펜슬(✏️)로 빈칸에 직접 쓰고 → 빈칸을 누르면 정답 · 모르면 줄 끝 「몰랐음」'}
+        ${LVON?`<span class="czmode">${['lo','mid','hi'].map(v=>`<button data-lv="${v}" class="${LV===v?'on':''}">${CZ_LV_NAME[v]}</button>`).join('')}</span>`:''}
         <span class="czmode"><button data-m="pen" class="${TYPE?'':'on'}">✏️ 펜슬</button><button data-m="type" class="${TYPE?'on':''}">⌨️ 입력·채점</button></span></div>
       ${setBtns?`<div class="czsets nohl">세트 ${setBtns}</div>`:''}
       <div class="czbody">${body||`<div class="czinfo">${STAR?'별표(☆)한 줄이 없어요.':'「몰랐음」 표시한 줄이 없어요.'}</div>`}</div>
@@ -1469,7 +1481,7 @@ function renderCloze(topic,set,missOnly){
         ${TYPE?`<button class="cta" id="czGrade">채점</button><span class="czscore" id="czScore"></span>`:''}
         <button class="cta alt" id="czReveal">전체 정답 보기</button>
         <button class="cta alt" id="czWipe">이 시트 필기 지우기</button>
-        ${!missOnly?`<button class="cta" id="czDone">이 세트 끝 ✓</button>`:''}
+        ${!missOnly?`<button class="cta" id="czDone">이 세트 끝 ✓${MID?' ('+CZ_LV_NAME[LV]+')':''}</button>`:''}
         ${nMiss&&!missOnly?`<button class="cta alt" id="czMiss">몰랐음만 다시 <span class="n">${nMiss}</span></button>`:''}
         ${nStar&&!STAR?`<button class="cta alt" id="czStar">★ 별표만 <span class="n">${nStar}</span></button>`:''}
         ${missOnly?`<button class="cta alt" id="czAll">전체 세트로</button>`:''}
@@ -1486,6 +1498,7 @@ function renderCloze(topic,set,missOnly){
   $('#czReveal').onclick=()=>{if(TYPE){a.querySelectorAll('.czw').forEach(w=>w.classList.add('show'));return;}
     const all=[...a.querySelectorAll('.czb')];const on=all.some(x=>!x.classList.contains('rv'));all.forEach(x=>x.classList.toggle('rv',on));};
   a.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{czSetMode(b.dataset.m);renderCloze(topic,set,missOnly);});
+  a.querySelectorAll('[data-lv]').forEach(b=>b.onclick=()=>{czSetLv(topic,b.dataset.lv);renderCloze(topic,set,missOnly);});
   if(TYPE){
     const ins=[...a.querySelectorAll('.czi')];
     ins.forEach((el,i)=>el.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();e.stopPropagation();
@@ -1500,12 +1513,12 @@ function renderCloze(topic,set,missOnly){
         const k=row.dataset.k, mb=row.querySelector('.czm');
         if(bad){st.miss[k]=true;mb.classList.add('on');mb.textContent='몰랐음 ✓';}
         else if(missOnly===true&&st.miss[k]){delete st.miss[k];mb.classList.remove('on');mb.textContent='몰랐음';}});
-      if(!missOnly&&tried){const l=st.log[set]||{cnt:0};st.log[set]={ts:Date.now(),ok,n:tried,cnt:(l.cnt||0)+1};}
+      if(!missOnly&&tried){const l=LOG[set]||{cnt:0};LOG[set]={ts:Date.now(),ok,n:tried,cnt:(l.cnt||0)+1};}
       save(); $('#czScore').textContent=ok+' / '+tried+' 정답'+(tried<ins.length?' (안 쓴 줄 '+Math.round((ins.length-tried))+'칸은 채점 안 함)':'')+(missOnly?' · 다 맞힌 줄은 몰랐음에서 빠짐':'');};
     if(ins[0])setTimeout(()=>ins[0].focus(),50);
   }
   $('#czWipe').onclick=()=>{try{INK.data[INK.page]=[];INK.save();INK.redraw();toast('이 시트의 필기를 지웠어요');}catch(e){}};
-  if($('#czDone'))$('#czDone').onclick=()=>{st.done[set]=Date.now();save();toast('세트 '+(set+1)+' 완료');
+  if($('#czDone'))$('#czDone').onclick=()=>{DONE[set]=Date.now();save();toast('세트 '+(set+1)+(MID?' ('+CZ_LV_NAME[LV]+')':'')+' 완료');
     if(set+1<nset)renderCloze(topic,set+1,false);else renderCloze(topic,set,false);};
   if($('#czMiss'))$('#czMiss').onclick=()=>renderCloze(topic,0,true);
   if($('#czAll'))$('#czAll').onclick=()=>renderCloze(topic,0,false);
