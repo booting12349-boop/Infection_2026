@@ -982,93 +982,102 @@ document.addEventListener('touchend',hlOnRelease);
 document.addEventListener('scroll',()=>hlClose(),true);
 
 /* ================= HOME ================= */
+/* ===== 오늘의 실전 (2026-11-10) =====
+   매일 날짜 기준으로 ACCP·지침 복습 대기 문항에서 40문을 뽑아 섞음 (ACCP 15 · 지침 25, 한쪽이 모자라면 다른 쪽으로 채움)
+   우선순위: 오답노트 → 상 난이도 → 간격보다 오래 밀린 문항 · 쉬운 문제 제외 · 같은 날엔 같은 세트(S.daily에 저장, 동기화됨) */
+const DAILY_N=40, DAILY_A=15, DAILY_PART=20;
+function dailyRand(seed){let x=seed>>>0||1;return()=>{x^=x<<13;x>>>=0;x^=x>>>17;x^=x<<5;x>>>=0;return x/4294967296;};}
+function dailyBuild(){
+  const td=today(), seed=[...td].reduce((a,c)=>(a*131+c.charCodeAt(0))>>>0,17), rnd=dailyRand(seed);
+  const score=(s,lv)=>{const over=s.box>0?daysSince(s.lastTs)/Math.max(1,BOX_DAYS[s.box]):1;return (s.wl===1?3:0)+(lv===3?1:0)+Math.min(2,over)+rnd()*1.2;};
+  const A=MODES.due().map(id=>({id,sc:score(S.q[id],0)})).sort((a,b)=>b.sc-a.sc);
+  const G=GMODES.dueSeen().map(id=>({id,sc:score(S.gq[id],(GQ_BY_ID[id]||{}).level)})).sort((a,b)=>b.sc-a.sc);
+  let na=Math.min(DAILY_A,A.length), ng=Math.min(DAILY_N-na,G.length); na=Math.min(A.length,DAILY_N-ng);
+  const ids=A.slice(0,na).map(x=>x.id).concat(G.slice(0,ng).map(x=>x.id));
+  for(let i=ids.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]];}
+  return {day:td,ids,ts:Date.now()};
+}
+function dailyGet(){if(!S.daily||S.daily.day!==today()){S.daily=dailyBuild();save();}return S.daily;}
+function dailyDone(id){const s=typeof id==='number'?S.q[id]:S.gq[id];const t0=new Date();t0.setHours(0,0,0,0);return !!(s&&s.lastTs>=t0.getTime());}
+function dailyStat(){const d=dailyGet();const done=d.ids.filter(dailyDone).length;return {n:d.ids.length,done,left:d.ids.length-done};}
+function dailyStart(){const d=dailyGet();const left=d.ids.filter(id=>!dailyDone(id));
+  if(!left.length){toast('오늘의 실전 끝 ✓ — 더 풀려면 「더보기」의 전체 복습으로');return;}
+  nav('drill');startSession(left.slice(0,DAILY_PART),'오늘의 실전','daily');}
+function homeLists(kind){const cz=S.cz||{};return Object.keys(cz).filter(t=>DIG_BY_TOPIC[t]).map(t=>({t,n:Object.keys((kind==='miss'?cz[t].miss:cz[t].star)||{}).filter(k=>cz[t][kind][k]).length})).filter(x=>x.n);}
+function boxSum(st,ids){let un=0,wl=0,stable=0;ids.forEach(id=>{const s=st[id]||{};if(!s.seen)un++;if(s.wl===1)wl++;if((s.box||0)>=3)stable++;});return {un,wl,stable,total:ids.length};}
 function renderHome(){
-  const d=drillStats(), c=currStats(), gq=gqStats(), RS=roundSummary();
+  const c=currStats(), RS=roundSummary(), d=drillStats();
+  const A=boxSum(S.q,BANK.map(b=>b.id)), G=boxSum(S.gq,GUIDEQ.map(g=>g.id));
+  const todoT=TOPICS.filter(t=>{const g=GQ_BY_TOPIC[t.id]||[];return g.length&&!g.some(x=>S.gq[x.id]&&S.gq[x.id].seen);}); /* 문항을 한 번도 안 푼 토픽 */
+  const ds=dailyStat(); let nd={pool:0,quota:0}; try{nd=ndStats();}catch(e){}
+  const MISS=homeLists('miss'), STAR=homeLists('star'), nMiss=MISS.reduce((a,x)=>a+x.n,0), nStar=STAR.reduce((a,x)=>a+x.n,0);
+  const bar=(x,col)=>`<div class="bar"><i style="width:${x.stable/x.total*100}%;background:${col}"></i></div>`;
+  const row=(lab,x,col)=>`<div style="margin-top:10px"><div class="lab"><span class="dot" style="background:${col}"></span>${lab}</div>
+      <div class="sub" style="font-size:13px;margin-top:4px">안정권 <b style="font-family:var(--mono)">${x.stable}</b>/${x.total} · 오답노트 <b style="font-family:var(--mono);color:var(--kr)">${x.wl}</b> · 안 푼 문항 <b style="font-family:var(--mono)">${x.un}</b></div>${bar(x,col)}</div>`;
   app().innerHTML=`
-  <div class="card calcard" id="calbox"></div>
-  <div class="hsplit">
-    <div class="card metric">
-      <div class="lab"><span class="dot" style="background:var(--teal)"></span>출제범위 가이드라인</div>
-      <div class="big">${c.done}<small>/${c.total} 토픽 완료</small></div>
-      <div class="bar"><i style="width:${c.done/c.total*100}%"></i></div>
-      <div class="sub">학습중 ${c.doing} · 복습필요 ${c.review} · 자료 체크 ${c.checks}/${c.gtot}<br>가이드라인 자가점검 ${gq.mastered}/${gq.total} 외움 · 정답률 ${gq.acc}%</div>
-    </div>
-    <div class="card metric">
-      <div class="lab"><span class="dot" style="background:var(--ink)"></span>ACCP 케이스 드릴</div>
-      <div class="big">${d.mastered}<small>/${BANK.length} 외움 · 정답률 ${d.acc}%</small></div>
-      <div class="bar"><i style="width:${d.mastered/BANK.length*100}%;background:var(--ink)"></i></div>
-      <div class="sub">한 번이라도 푼 문제 ${d.answered}/${BANK.length} · 오늘 복습 ${d.due}문제</div>
-    </div>
+  <div class="card metric">
+    <div class="lab"><span class="dot" style="background:var(--kr)"></span>D-${DDAY} · 시험 12.19(토) 15:00</div>
+    ${row('가이드라인 문항',G,'var(--teal)')}
+    ${row('ACCP 케이스',A,'var(--ink)')}
+    <div class="sub" style="margin-top:8px;font-size:12px;color:var(--muted)">안정권 = 기억 단계 3 이상(간격 4일 이상 버팀)${todoT.length?` · 아직 안 본 토픽: ${todoT.map(t=>`<a href="#" data-jump="${t.id}" style="color:var(--kr)">${esc(t.name)}</a>`).join(', ')}`:''}</div>
   </div>
 
   <div class="card todaybox">
     <h3>오늘 할 일</h3>
     <div class="todo-actions">
-      <button class="cta" id="goDue">오늘의 복습 풀기 <span class="n">${d.due}</span></button>
-      ${d.wrong?`<button class="cta alt" id="goWrong">틀린 문제 · ACCP <span class="n">${d.wrong}</span></button>`:''}
-      ${d.gwrong?`<button class="cta alt" id="goGWrong">틀린 문제 · 가이드라인 <span class="n">${d.gwrong}</span></button>`:''}
-      <button class="cta alt" id="goGDue">가이드라인 복습 <span class="n">${GMODES.dueSeen().length}</span></button>
-      ${(()=>{try{const n=ndStats();return n.pool?`<button class="cta alt" id="goNum">🔢 숫자 드릴 <span class="n">${n.quota}</span></button>`:'';}catch(e){return '';}})()}
-      ${(()=>{const cz=S.cz||{};return Object.keys(cz).filter(t=>DIG_BY_TOPIC[t]&&Object.keys(cz[t].star||{}).length).map(t=>`<button class="cta alt" data-czstar="${t}">★ 별표 빈칸 · ${esc((TOPIC_BY[t]||{}).name||t)} <span class="n">${Object.keys(cz[t].star).length}</span></button>`).join('');})()}
-      ${(()=>{const cz=S.cz||{};return Object.keys(cz).filter(t=>DIG_BY_TOPIC[t]&&Object.keys(cz[t].miss||{}).length).map(t=>`<button class="cta alt" data-czmiss="${t}">✍️ 몰랐음 빈칸 · ${esc((TOPIC_BY[t]||{}).name||t)} <span class="n">${Object.keys(cz[t].miss).length}</span></button>`).join('');})()}
-      ${(GMODES.easy().length+MODES.easy().length)?`<button class="cta alt" id="goEasy">쉬운 문제 훑기 <span class="n">${GMODES.easy().length+MODES.easy().length}</span></button>`:''}
-      <button class="cta alt" id="goCurr">출제범위 훑기 <span class="n">${c.done}/${c.total}</span></button>
+      <button class="cta" id="goDaily">오늘의 실전 <span class="n">${ds.left?ds.done+'/'+ds.n:'완료 ✓'}</span></button>
+      ${nd.pool?`<button class="cta alt" id="goNum">🔢 숫자 드릴 <span class="n">${nd.quota||'완료 ✓'}</span></button>`:''}
+      ${nMiss?`<button class="cta alt" id="goMissL">✍️ 몰랐음 빈칸 <span class="n">${nMiss}</span></button>`:''}
+      ${nStar?`<button class="cta alt" id="goStarL">★ 별표 빈칸 <span class="n">${nStar}</span></button>`:''}
     </div>
+    <div id="pickBox"></div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px">더보기 · 틀린 문제 · 전체 복습 · 출제범위</summary>
+      <div class="todo-actions" style="margin-top:8px">
+        ${d.wrong?`<button class="cta alt" id="goWrong">틀린 문제 · ACCP <span class="n">${d.wrong}</span></button>`:''}
+        ${d.gwrong?`<button class="cta alt" id="goGWrong">틀린 문제 · 가이드라인 <span class="n">${d.gwrong}</span></button>`:''}
+        <button class="cta alt" id="goDue">전체 복습 대기 · ACCP <span class="n">${d.due}</span></button>
+        <button class="cta alt" id="goGDue">전체 복습 대기 · 가이드라인 <span class="n">${GMODES.dueSeen().length}</span></button>
+        ${(GMODES.easy().length+MODES.easy().length)?`<button class="cta alt" id="goEasy">쉬운 문제 훑기 <span class="n">${GMODES.easy().length+MODES.easy().length}</span></button>`:''}
+        <button class="cta alt" id="goCurr">출제범위</button>
+      </div></details>
     <div class="streakline"><span class="dot" style="background:var(--amber)"></span>
-      연속 학습 <b style="font-family:var(--mono)">${S.meta.streak}</b>일 · 누적 <b style="font-family:var(--mono)">${S.meta.days||0}</b>일 · 12월 시험까지 매일 한 칸씩</div>
+      연속 학습 <b style="font-family:var(--mono)">${S.meta.streak}</b>일 · 누적 <b style="font-family:var(--mono)">${S.meta.days||0}</b>일</div>
   </div>
 
-  <div class="card todaybox">
-    <h3>회독 현황</h3>
-    <div style="font-size:13px;line-height:1.9;margin-bottom:6px">
-      전체 <b style="font-family:var(--mono)">${RS.total}</b>회 기록 ·
-      모든 토픽이 최소 <b style="font-family:var(--mono)">${RS.min}</b>회독 ·
-      ${RS.never?`아직 안 본 토픽 <b style="font-family:var(--mono);color:var(--kr)">${RS.never}</b>개`:'<b style="color:var(--ok)">전 토픽 1회독 이상 완료</b>'}
-    </div>
-    ${RS.stale.length?`<div class="lab" style="margin:10px 0 2px"><span class="dot" style="background:var(--amber)"></span>오래 안 본 토픽</div>
-    <div class="revlist">${RS.stale.map(x=>`<div class="revrow" data-jump="${x.t.id}">
-      <span class="rn">${esc(x.t.name)}</span>
-      <span class="rr">${x.i.n}회독</span>
-      <span class="rc ${x.i.cls}">${agoText(x.i.ago)}</span></div>`).join('')}</div>`
-    :`<div style="font-size:12px;color:var(--muted)">출제범위 탭의 토픽 카드에서 「＋ 회독 기록」을 누르면 여기에 쌓여요.</div>`}
-  </div>
-
-  <div class="card infonote" style="border-left:3px solid var(--kr)">
-    <div class="lab" style="margin-bottom:8px"><span class="dot" style="background:var(--kr)"></span>2026년도 제4회 전문약사 자격시험 (감염)</div>
-    <div style="font-size:13px;line-height:1.9">
-      <b>D-${DDAY}</b> · 시험일 <b>2026.12.19(토) 15:00–18:00</b> · 경원중학교(서울 서초구)<br>
-      원서접수 10/16(금)~10/30(금) · 서류적격자 발표 11/16(월) 15:00 · 수험표 교부 12/11(금)<br>
-      합격자 발표 2027.1/15(금) 15:00 · 자격증 교부 2027.3/15(월) 이전
-    </div>
-    <div class="dgsrc" style="margin-top:10px">출처: 한국병원약사회 병약 2026-389호(2026.7.31) · 일정은 변경될 수 있음</div>
-  </div>
+  <div class="card calcard" id="calbox"></div>
 
   <div class="card infonote"><details>
-    <summary>학습 동선 · ACCP 버전 안내</summary>
-    <p><b>3단 구성으로 쓰면 돼.</b> ① <b>출제범위</b> 탭 = 시험에 명시된 가이드라인 전체를 토픽별로 훑고(미학습→학습중→완료), 원문 링크로 바로 이동. ② 깊이 읽을 자료는 NotebookLM에 넣어 정독. ③ <b>케이스 드릴</b> = ACCP 케이스 문항을 간격반복으로 암기. 토픽 카드의 "관련 ACCP 케이스" 버튼을 누르면 그 토픽 문제만 모아서 풀려.</p>
-    <p><b>ACCP 버전:</b> 네 파일은 2023판이고, 이후 2024·2025·2026판이 나왔어(최신은 2026.6.17 출시). 다만 유료·저작권 자료라 최신 문제를 가져오진 못해. 한국 감염약료 시험은 위 <b>공식 국내·IDSA 가이드라인</b>이 정답 기준이니, ACCP는 케이스 풀이 훈련용으로 쓰고 내용 충돌 시 공식 범위를 따르면 돼.</p>
+    <summary>회독 현황 · 시험 정보 · 학습 동선</summary>
+    <div style="font-size:13px;line-height:1.9;margin:10px 0 6px">
+      전체 <b style="font-family:var(--mono)">${RS.total}</b>회 기록 · 모든 토픽이 최소 <b style="font-family:var(--mono)">${RS.min}</b>회독 ·
+      ${RS.never?`아직 안 본 토픽 <b style="font-family:var(--mono);color:var(--kr)">${RS.never}</b>개`:'<b style="color:var(--ok)">전 토픽 1회독 이상 완료</b>'}</div>
+    ${RS.stale.length?`<div class="lab" style="margin:10px 0 2px"><span class="dot" style="background:var(--amber)"></span>오래 안 본 토픽</div>
+    <div class="revlist">${RS.stale.map(x=>`<div class="revrow" data-jump="${x.t.id}"><span class="rn">${esc(x.t.name)}</span><span class="rr">${x.i.n}회독</span><span class="rc ${x.i.cls}">${agoText(x.i.ago)}</span></div>`).join('')}</div>`:''}
+    <div style="font-size:13px;line-height:1.9;margin-top:12px"><b>2026년도 제4회 전문약사 자격시험 (감염)</b><br>
+      시험일 <b>2026.12.19(토) 15:00–18:00</b> · 경원중학교(서울 서초구)<br>
+      서류적격자 발표 11/16(월) 15:00 · 수험표 교부 12/11(금) · 합격자 발표 2027.1/15(금) 15:00</div>
+    <div class="dgsrc" style="margin-top:6px">출처: 한국병원약사회 병약 2026-389호(2026.7.31) · 일정은 변경될 수 있음</div>
+    <p style="font-size:13px;margin-top:10px">출제범위 탭 = 토픽별 정리·원문 링크 · 케이스 드릴 = 문제풀이 · 빈칸 노트·숫자 드릴 = 인출 연습. ACCP 문항은 2023판 기준.</p>
   </details></div>
 
   <div class="foot"><span>모든 진도·메모는 이 브라우저에 자동 저장됩니다</span>
     <button id="reset">전체 초기화</button></div>`;
-  $('#goDue').onclick=()=>{const ids=MODES.due();ids.length?(nav('drill'),startSession(ids,'오늘의 복습','due')):toast('오늘 복습할 ACCP 문제가 없어요. 전체 셔플로 더 풀어보세요!');};
+  $('#goDaily').onclick=dailyStart;
+  if($('#goNum'))$('#goNum').onclick=()=>nav('num');
+  const pick=(L,kind)=>{const box=$('#pickBox');if(box.dataset.k===kind){box.innerHTML='';box.dataset.k='';return;}box.dataset.k=kind;
+    box.innerHTML=`<div class="todo-actions" style="margin-top:8px">${L.sort((a,b)=>b.n-a.n).map(x=>`<button class="cta alt" data-pk="${x.t}">${esc((TOPIC_BY[x.t]||{}).name||x.t)} <span class="n">${x.n}</span></button>`).join('')}</div>`;
+    box.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.pk,0,kind==='miss'?true:'star');});};
+  if($('#goMissL'))$('#goMissL').onclick=()=>pick(MISS,'miss');
+  if($('#goStarL'))$('#goStarL').onclick=()=>pick(STAR,'star');
+  $('#goDue').onclick=()=>{const ids=MODES.due();ids.length?(nav('drill'),startSession(ids,'오늘의 복습','due')):toast('복습할 ACCP 문제가 없어요');};
   if($('#goWrong'))$('#goWrong').onclick=()=>{const ids=MODES.wrong();if(ids.length){nav('drill');startSession(ids,'틀린 문제만','wrong');}};
   if($('#goGWrong'))$('#goGWrong').onclick=()=>{const ids=GMODES.wrong();if(ids.length){nav('drill');startSession(ids,'가이드라인 · 틀린 문제만','guide');}};
   $('#goCurr').onclick=()=>nav('curriculum');
-  document.querySelectorAll('[data-czstar]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.czstar,0,'star');});
-  document.querySelectorAll('[data-czmiss]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.czmiss,0,true);});
   if($('#goEasy'))$('#goEasy').onclick=()=>{const g=GMODES.easy(),a=MODES.easy();nav('drill');
     if(g.length)startSession(g,'쉬운 문제 훑기 · 가이드라인','guide');else startSession(a,'쉬운 문제 훑기 · ACCP','easy');};
-  if($('#goNum'))$('#goNum').onclick=()=>nav('num');
-  $('#goGDue').onclick=()=>{const ids=GMODES.dueSeen();
-    ids.length?(nav('drill'),startSession(ids,'가이드라인 · 오늘의 복습','guide'))
-      :toast('오늘 복습할 가이드라인 문제가 없어요 — 토픽에서 새로 풀어보세요');};
-  document.querySelectorAll('[data-jump]').forEach(r=>r.onclick=()=>{
-    const tid=r.dataset.jump;
-    nav('curriculum');
-    setTimeout(()=>{const card=document.querySelector('.topic[data-tid="'+tid+'"]');
-      if(card){card.classList.add('open');card.scrollIntoView({behavior:'smooth',block:'center'});}},60);
-  });
+  $('#goGDue').onclick=()=>{const ids=GMODES.dueSeen();ids.length?(nav('drill'),startSession(ids,'가이드라인 · 오늘의 복습','guide')):toast('복습할 가이드라인 문제가 없어요');};
+  document.querySelectorAll('[data-jump]').forEach(r=>r.onclick=(e)=>{e.preventDefault();const tid=r.dataset.jump;nav('curriculum');
+    setTimeout(()=>{const card=document.querySelector('.topic[data-tid="'+tid+'"]');if(card){card.classList.add('open');card.scrollIntoView({behavior:'smooth',block:'center'});}},60);});
   $('#reset').onclick=doReset;
   renderCal();
 }
@@ -1690,13 +1699,14 @@ function startSession(ids,title,mode){
   ids=[...new Set(ids)]; if(!ids.length){toast('해당하는 문제가 없어요.');return;}
   const kind = mode==='guide' ? 'guide' : 'accp';
   SESS={ids:/복습/.test(title||'')?reviewOrder(ids,kind):shuffle(ids.slice()),pos:0,title,mode,kind};
+  if(mode==='daily'){SESS.ids=ids.slice();Object.defineProperty(SESS,'kind',{configurable:true,enumerable:true,get(){const id=this.ids[Math.min(this.pos,this.ids.length-1)];return typeof id==='string'?'guide':'accp';}});}
   if(kind==='guide'){const ts=[...new Set(ids.map(i=>(GQ_BY_ID[i]||{}).topic))];tSet(ts.length===1?ts[0]:null);}
   else tSet(null);
   renderQuestion();
 }
 function isGuide(){return SESS&&SESS.kind==='guide';}
-function curItem(id){return SESS.kind==='guide'?GQ_BY_ID[id]:BANK.find(x=>x.id===id);}
-function curState(id){return SESS.kind==='guide'?S.gq[id]:S.q[id];}
+function curItem(id){if(SESS.mode==='daily')return typeof id==='string'?GQ_BY_ID[id]:BANK.find(x=>x.id===id);return SESS.kind==='guide'?GQ_BY_ID[id]:BANK.find(x=>x.id===id);}
+function curState(id){if(SESS.mode==='daily')return typeof id==='string'?S.gq[id]:S.q[id];return SESS.kind==='guide'?S.gq[id]:S.q[id];}
 function renderDrillHome(){
   SESS=null;
   const q=S.q, d=drillStats();
@@ -1965,10 +1975,11 @@ function renderDone(){
     ${SESS.solveN?`<div class="sub" style="margin-top:4px">풀이시간 ${Math.round(SESS.solveMs/60000)}분 · 문항당 평균 ${Math.round(SESS.solveMs/SESS.solveN/1000)}초 <span style="color:var(--faint)">(해설 읽는 시간 제외)</span></div>`:''}
     ${(SESS.title||'').indexOf('쉬운 문제 훑기 · 가이드라인')===0&&MODES.easy().length?`<div class="sub" style="margin-top:6px"><button class="btn btn-ghost" id="moreEasy">ACCP 쉬운 문제도 보기 (${MODES.easy().length})</button></div>`:''}
     ${(isGuide()&&(()=>{const ts=[...new Set(ids.map(i=>(GQ_BY_ID[i]||{}).topic))];return ts.length===1&&czSets(ts[0]);})())?`<div class="sub" style="margin-top:10px"><button class="btn btn-primary" id="goCloze">✍️ 이 토픽 빈칸 노트로 (10분)</button></div>`:''}
-    <div class="row">${(!isGuide()&&dueLeft)?`<button class="btn btn-primary" id="more">오늘 복습 이어서 (${dueLeft})</button>`:''}
+    <div class="row">${SESS.mode==='daily'?(()=>{const st=dailyStat();return st.left?`<button class="btn btn-primary" id="dailyMore">오늘의 실전 이어서 (${st.left})</button>`:'<span class="sub">오늘의 실전 40문 끝 ✓</span>';})():''}${(SESS.mode!=='daily'&&!isGuide()&&dueLeft)?`<button class="btn btn-primary" id="more">오늘 복습 이어서 (${dueLeft})</button>`:''}
       <button class="btn btn-ghost" id="back">드릴 홈</button>
       <button class="btn btn-ghost" id="home2">전체 홈</button></div></div>`;
-  if(!isGuide()&&dueLeft)$('#more').onclick=()=>startSession(MODES.due(),'오늘의 복습','due');
+  if($('#dailyMore'))$('#dailyMore').onclick=dailyStart;
+  if($('#more'))$('#more').onclick=()=>startSession(MODES.due(),'오늘의 복습','due');
   $('#back').onclick=()=>renderDrillHome(); $('#home2').onclick=()=>nav('home');
   if($('#goCloze'))$('#goCloze').onclick=()=>{const tp=(GQ_BY_ID[ids[0]]||{}).topic,st=czStore(tp),n=czSets(tp);let k=0;while(k<n-1&&st.done[k])k++;nav('curriculum');renderCloze(tp,k,false);};
   if($('#moreEasy'))$('#moreEasy').onclick=()=>startSession(MODES.easy(),'쉬운 문제 훑기 · ACCP','easy');
@@ -2052,6 +2063,7 @@ function mergeState(a,b){
       R[t]={miss:Object.assign({},y.miss||{},x.miss||{}),done:mdone(x.done,y.done),star:Object.assign({},y.star||{},x.star||{}),log:mlog(x.log,y.log),
         doneL:mdone(x.doneL,y.doneL),logL:mlog(x.logL,y.logL),doneM:mdone(x.doneM,y.doneM),logM:mlog(x.logM,y.logM)};
       const vv=Math.max(+x._v||0,+y._v||0); if(vv)R[t]._v=vv;});o.cz=R;}
+  {const x=a.daily,y=b.daily;if(x&&y&&x.day===y.day)o.daily=(x.ts||0)<=(y.ts||0)?x:y;else if(x||y)o.daily=(!y||(x&&dayNum(x.day)>=dayNum(y.day)))?x:y;}
   {const A=a.nd||{},B=b.nd||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>{const x=A[id],y=B[id];R[id]=!x?y:!y?x:((x.lastTs||0)>=(y.lastTs||0)?x:y);});o.nd=R;}
   {const A=a.mn||{},B=b.mn||{},R={};
