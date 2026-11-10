@@ -527,6 +527,7 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
     <button data-v="home">홈</button>
     <button data-v="curriculum">출제범위</button>
     <button data-v="mnem">암기</button>
+    <button data-v="num">숫자</button>
     <button data-v="drill">케이스 드릴</button>
     <button data-v="mock">모의고사</button>
     <button data-v="plan">학습 일정</button>
@@ -584,7 +585,11 @@ async function load(){
   TOPICS.forEach(t=>{if(!S.topics[t.id])S.topics[t.id]={status:'todo',note:'',checks:{},rounds:[]};
     if(!Array.isArray(S.topics[t.id].rounds))S.topics[t.id].rounds=[];});
   S.mn=S.mn||{}; S.plan=S.plan||{}; PLAN.weeks.forEach(w=>{if(!S.plan[w.id])S.plan[w.id]={done:false};});
-  S.hl=S.hl||{}; S.qmemo=S.qmemo||{}; S.tlog=S.tlog||{}; S.tman=S.tman||{};
+  S.hl=S.hl||{}; S.qmemo=S.qmemo||{}; S.tlog=S.tlog||{}; S.tman=S.tman||{}; S.nd=S.nd||{};
+  /* 2026-11-10 1회 복구: 동기화 합치기 버그로 지워진 TDM 하 세트 1~4번(11/9 22:21 기록) + 사용자가 11/10에 푼 5번 */
+  if(!(S.fix&&S.fix.tdm1110)){try{S.cz=S.cz||{};const c=S.cz.tdm;if(c){c.doneL=c.doneL||{};
+    [0,1,2,3].forEach(i=>{if(!c.doneL[i])c.doneL[i]=1794230506023;}); if(!c.doneL[4])c.doneL[4]=1794312600000;}
+    S.fix=Object.assign({},S.fix,{tdm1110:1});}catch(e){}}
   // 오답노트 이관: 한 번이라도 틀린 문제는 오답노트에 넣고, 마지막 오답 이후 연속 정답 수(box-1)를 이어받는다
   ['q','gq'].forEach(g=>Object.values(S[g]).forEach(s=>{if(s&&s.wl===undefined){
     if(s.wrong>0){s.wl=1;s.ws=Math.max(0,(s.box||1)-1);}else{s.wl=0;s.ws=0;}}}));
@@ -592,7 +597,7 @@ async function load(){
 const WRONG_EXIT=5; // 틀린 뒤 이만큼 맞히면 오답노트에서 빠짐
 function inWrong(s){return !!(s&&s.wl===1);}
 let saveT=null;
-function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{try{S.prog=Object.fromEntries(TOPICS.map(t=>{const p=topicProg(t.id);return [t.id,{qd:p.qd,qn:p.qn,cd:p.cd,cn:p.cn,acc:p.acc,full:p.full}];}));}catch(e){}if(SYNC.on&&!SYNC.applying)S._ts=Date.now();try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}if(SYNC.on&&!SYNC.applying)SYNC.push();},150);}
+function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{try{S.ndStat=ndStats();S.ndNeed=ndNeed();}catch(e){}try{S.prog=Object.fromEntries(TOPICS.map(t=>{const p=topicProg(t.id);return [t.id,{qd:p.qd,qn:p.qn,cd:p.cd,cn:p.cn,acc:p.acc,full:p.full}];}));}catch(e){}if(SYNC.on&&!SYNC.applying)S._ts=Date.now();try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}if(SYNC.on&&!SYNC.applying)SYNC.push();},150);}
 
 const $=s=>document.querySelector(s);
 const app=()=>$('#app');
@@ -798,9 +803,9 @@ function renderMockResult(r){
 /* ================= router ================= */
 let VIEW='home';
 let DIGVIEW=null;
-function nav(v){VIEW=v;CZKEY=null;SESS=null;clearInterval(MOCKT);if(v!=='drill')tSet(null);markVisit();
+function nav(v){VIEW=v;CZKEY=null;SESS=null;if(typeof ND!=='undefined')ND=null;clearInterval(MOCKT);if(v!=='drill')tSet(null);markVisit();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else if(v==='mock')renderMockHome(); else renderDrillHome();
+  if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='num')renderNum(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else if(v==='mock')renderMockHome(); else renderDrillHome();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>nav(b.dataset.v));
@@ -1003,6 +1008,7 @@ function renderHome(){
       ${d.wrong?`<button class="cta alt" id="goWrong">틀린 문제 · ACCP <span class="n">${d.wrong}</span></button>`:''}
       ${d.gwrong?`<button class="cta alt" id="goGWrong">틀린 문제 · 가이드라인 <span class="n">${d.gwrong}</span></button>`:''}
       <button class="cta alt" id="goGDue">가이드라인 복습 <span class="n">${GMODES.dueSeen().length}</span></button>
+      ${(()=>{try{const n=ndStats();return n.pool?`<button class="cta alt" id="goNum">🔢 숫자 드릴 <span class="n">${n.quota}</span></button>`:'';}catch(e){return '';}})()}
       ${(()=>{const cz=S.cz||{};return Object.keys(cz).filter(t=>DIG_BY_TOPIC[t]&&Object.keys(cz[t].star||{}).length).map(t=>`<button class="cta alt" data-czstar="${t}">★ 별표 빈칸 · ${esc((TOPIC_BY[t]||{}).name||t)} <span class="n">${Object.keys(cz[t].star).length}</span></button>`).join('');})()}
       ${(()=>{const cz=S.cz||{};return Object.keys(cz).filter(t=>DIG_BY_TOPIC[t]&&Object.keys(cz[t].miss||{}).length).map(t=>`<button class="cta alt" data-czmiss="${t}">✍️ 몰랐음 빈칸 · ${esc((TOPIC_BY[t]||{}).name||t)} <span class="n">${Object.keys(cz[t].miss).length}</span></button>`).join('');})()}
       ${(GMODES.easy().length+MODES.easy().length)?`<button class="cta alt" id="goEasy">쉬운 문제 훑기 <span class="n">${GMODES.easy().length+MODES.easy().length}</span></button>`:''}
@@ -1053,6 +1059,7 @@ function renderHome(){
   document.querySelectorAll('[data-czmiss]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.czmiss,0,true);});
   if($('#goEasy'))$('#goEasy').onclick=()=>{const g=GMODES.easy(),a=MODES.easy();nav('drill');
     if(g.length)startSession(g,'쉬운 문제 훑기 · 가이드라인','guide');else startSession(a,'쉬운 문제 훑기 · ACCP','easy');};
+  if($('#goNum'))$('#goNum').onclick=()=>nav('num');
   $('#goGDue').onclick=()=>{const ids=GMODES.dueSeen();
     ids.length?(nav('drill'),startSession(ids,'가이드라인 · 오늘의 복습','guide'))
       :toast('오늘 복습할 가이드라인 문제가 없어요 — 토픽에서 새로 풀어보세요');};
@@ -2039,8 +2046,14 @@ function mergeState(a,b){
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]={done:!!((A[id]&&A[id].done)||(B[id]&&B[id].done))});o.plan=R;}
   {const A=a.cz||{},B=b.cz||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(t=>{const x=A[t]||{},y=B[t]||{};
-      R[t]={miss:Object.assign({},y.miss||{},x.miss||{}),done:Object.assign({},y.done||{},x.done||{}),star:Object.assign({},y.star||{},x.star||{}),
-        log:(()=>{const L=Object.assign({},y.log||{});Object.entries(x.log||{}).forEach(([k,v])=>{if(!L[k]||(v.ts||0)>=(L[k].ts||0))L[k]=v;});return L;})()};});o.cz=R;}
+      const mlog=(p,q)=>{const L=Object.assign({},q||{});Object.entries(p||{}).forEach(([k,v])=>{if(!L[k]||(v.ts||0)>=(L[k].ts||0))L[k]=v;});return L;};
+      const mdone=(p,q)=>{const D=Object.assign({},q||{});Object.entries(p||{}).forEach(([k,v])=>{D[k]=Math.max(+v||0,+D[k]||0);});return D;};
+      /* 2026-11-10 수정: 하·중 세트 기록(doneL/logL/doneM/logM)과 이관 버전(_v)도 합침 — 예전엔 빠져서 동기화 때 하 세트 기록이 지워졌음 */
+      R[t]={miss:Object.assign({},y.miss||{},x.miss||{}),done:mdone(x.done,y.done),star:Object.assign({},y.star||{},x.star||{}),log:mlog(x.log,y.log),
+        doneL:mdone(x.doneL,y.doneL),logL:mlog(x.logL,y.logL),doneM:mdone(x.doneM,y.doneM),logM:mlog(x.logM,y.logM)};
+      const vv=Math.max(+x._v||0,+y._v||0); if(vv)R[t]._v=vv;});o.cz=R;}
+  {const A=a.nd||{},B=b.nd||{},R={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>{const x=A[id],y=B[id];R[id]=!x?y:!y?x:((x.lastTs||0)>=(y.lastTs||0)?x:y);});o.nd=R;}
   {const A=a.mn||{},B=b.mn||{},R={};
     new Set([...Object.keys(A),...Object.keys(B)]).forEach(id=>R[id]=Math.max(A[id]||0,B[id]||0));o.mn=R;}
   {const A=a.hl||{},B=b.hl||{},R={};
@@ -2424,7 +2437,149 @@ const INK={
 };
 
 
+/* ===== 숫자 드릴 (2026-11-10) =====
+   - 문항: 빈칸 노트에서 「몰랐음」 표시된 줄 중 숫자·범위·투여간격이 답인 칸 (허브가 매번 자동으로 뽑음)
+   - 보기: 정답 + 같은 토픽 정리본의 '같은 단위' 실제 수치 3개 (부족하면 다른 토픽의 같은 단위 수치). 지어낸 숫자 없음
+   - 졸업: 서로 다른 3일에 연속 정답 → 그 칸 졸업. 한 줄의 칸이 모두 졸업하면 그 줄의 「몰랐음」 자동 해제
+   - 기록: S.nd 에만 저장 (기존 기록 키는 건드리지 않음)
+   - 연상: 아침 자동 작업이 시트에 써 둔 연상을 읽어 와 정답 확인 뒤 보여줌 */
+const ND_GRAD=3, ND_DAILY=20;
+const ND_HINT_SHEET='1Jp5l4UlGixSEbwshOR51dFBmrANyN0_NUQvOqFJBreI';
+let NDH={}; try{NDH=JSON.parse(localStorage.getItem('idpc_ndhint')||'{}')||{};}catch(e){NDH={};}
+function ndCsv(txt){const rows=[];let r=[],f='',q=false;for(let i=0;i<txt.length;i++){const c=txt[i];
+  if(q){if(c==='"'){if(txt[i+1]==='"'){f+='"';i++;}else q=false;}else f+=c;}
+  else if(c==='"')q=true;else if(c===','){r.push(f);f='';}else if(c==='\n'||c==='\r'){if(c==='\r'&&txt[i+1]==='\n')i++;r.push(f);rows.push(r);r=[];f='';}else f+=c;}
+  if(f!==''||r.length){r.push(f);rows.push(r);}return rows;}
+async function ndLoadHints(){
+  if(!/^[\w-]{20,}$/.test(ND_HINT_SHEET))return;
+  try{const res=await fetch('https://docs.google.com/spreadsheets/d/'+ND_HINT_SHEET+'/gviz/tq?tqx=out:csv&gid=0&headers=1&_='+Date.now());
+    if(!res.ok)return; const rows=ndCsv(await res.text()); if(!rows.length)return;
+    const H=rows[0].map(x=>x.trim()); const ik=H.indexOf('key'), im=H.indexOf('연상'), is=H.indexOf('근거');
+    if(ik<0||im<0)return; const o={};
+    rows.slice(1).forEach(r=>{const k=(r[ik]||'').trim(),m=(r[im]||'').trim();if(k&&m)o[k]={m,s:is>=0?(r[is]||'').trim():''};});
+    NDH=o; try{localStorage.setItem('idpc_ndhint',JSON.stringify(o));}catch(e){}
+  }catch(e){}
+}
+function ndUnit(t,m){if(m.k==='freq')return 'freq';
+  const u=t.slice(m.b).match(/^\s*(mcg\/mL|μg\/mL|mg\/mL|mg\/L|mg\/dL|g\/dL|mg\/kg\/h|mg\/kg\/day|mg\/kg\/일|mg\/kg|mg\/일|mg|mcg|μg|g\/일|g|mL\/min(?:\/1\.73\s*m²)?|mL|IU\/mL|IU|U\/L|cells\/μL|cells\/mm³|mmHg|%|일|주|개월|시간|분|회|정|배|세|kg)/);
+  return u?u[1].replace(/\s+/g,''):'';}
+const ND_LINES={};
+function ndLines(t){if(!ND_LINES[t])ND_LINES[t]=czLines(t);return ND_LINES[t];}
+function ndKey(s){return czSyn(czNorm0(s));}
+function ndPool(){
+  const out=[]; const cz=S.cz||{};
+  Object.keys(cz).forEach(t=>{if(!DIG_BY_TOPIC[t])return; const miss=cz[t].miss||{}; const ks=Object.keys(miss).filter(k=>miss[k]); if(!ks.length)return;
+    const by={}; ndLines(t).forEach(L=>by[L.k]=L);
+    ks.forEach(k=>{const L=by[k]; if(!L)return;
+      L.m.forEach((m,i)=>{if(m.k==='drug')return; out.push({id:t+'|'+k+'|'+i,t,k,i,L,m,ans:L.t.slice(m.a,m.b),unit:ndUnit(L.t,m)});});});});
+  return out;}
+function ndState(id){S.nd=S.nd||{};return S.nd[id]||(S.nd[id]={n:0,ok:0,st:0,lastDay:null,lastTs:0,last:null,days:[]});}
+function ndActive(it){const s=(S.nd||{})[it.id];return !(s&&s.g)||!!s.gl; /* gl: 줄 전체 졸업 뒤 다시 「몰랐음」이 된 칸 → 다시 대상 */}
+function ndStats(){const P=ndPool(),td=today();const act=P.filter(ndActive);
+  const doneToday=act.filter(it=>{const s=(S.nd||{})[it.id];return s&&s.lastDay===td;}).length;
+  const grad=Object.values(S.nd||{}).filter(s=>s&&s.g).length; /* 누적 졸업 칸 */
+  const due=act.filter(it=>{const s=(S.nd||{})[it.id];return !(s&&s.lastDay===td);}).length;
+  return {pool:act.length,due,doneToday,grad,quota:Math.max(0,Math.min(ND_DAILY-doneToday,due))};}
+/* 아침 자동 작업이 연상을 만들 줄 목록 (연상 없는 줄, 최근 틀린 줄 우선, 최대 40줄) — 시트 동기화로 전달됨 */
+function ndNeed(){const seen=new Set(),out=[];
+  const P=ndPool().filter(ndActive).sort((a,b)=>{const x=(S.nd||{})[a.id]||{},y=(S.nd||{})[b.id]||{};return (x.last==='w'?0:x.n?2:1)-(y.last==='w'?0:y.n?2:1)||(y.lastTs||0)-(x.lastTs||0);});
+  for(const it of P){const key=it.t+'|'+it.k;if(seen.has(key)||NDH[key])continue;seen.add(key);
+    out.push({key,topic:it.t,h:it.L.h,t:it.L.t,ans:it.L.m.filter(m=>m.k!=='drug').map(m=>it.L.t.slice(m.a,m.b))});if(out.length>=40)break;}
+  return out;}
+function ndChoices(it){
+  const norm=ndKey(it.ans), inLine=new Set(it.L.m.map(m=>ndKey(it.L.t.slice(m.a,m.b))));
+  const isR=v=>/\d\s*(?:[~–\-]|to)\s*\d/.test(v), num=v=>{const x=parseFloat(String(v).replace(/[^\d.]/g,' ').trim().split(/\s+/)[0]);return isFinite(x)&&x>0?x:null;};
+  const aR=isR(it.ans), aN=num(it.ans);
+  const seed=[...it.id].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,7);
+  /* 후보: 같은 단위의 실제 수치. 점수 = 모양(범위/단일) 다름 → 크기 10배 이상 차이 → 이 줄에서 먼 순 (같은 표·섹션의 이웃 값이 실제로 헷갈리는 값) */
+  const TL=ndLines(it.t), idx=TL.findIndex(L=>L.k===it.k), cand=new Map();
+  const consider=(L,dist)=>{for(const m of L.m){if(m.k==='drug')continue;if(ndUnit(L.t,m)!==it.unit)continue;
+      const v=L.t.slice(m.a,m.b), n=ndKey(v); if(n===norm||inLine.has(n)||czOk(v,it.ans,it.L.t))continue;
+      const vN=num(v), far=(aN&&vN)?(Math.max(aN,vN)/Math.min(aN,vN)>=10?1:0):0;
+      const sc=(isR(v)!==aR?1000:0)+far*100+Math.min(99,dist);
+      if(!cand.has(n)||cand.get(n).sc>sc)cand.set(n,{v,sc});}};
+  TL.forEach((L,j)=>{if(L.k!==it.k)consider(L,Math.abs(j-idx));});
+  Object.keys(DIG_BY_TOPIC).forEach(t=>{if(t!==it.t)ndLines(t).forEach((L,j)=>consider(L,60+((j+seed)%39)));});
+  const pick=[...cand.values()].sort((a,b)=>a.sc-b.sc).slice(0,3).map(x=>x.v);
+  if(it.unit==='freq'&&pick.length<3){const seen=new Set([norm,...pick.map(ndKey)]);['q6h','q8h','q12h','q24h','q48h'].forEach(v=>{if(pick.length<3&&!seen.has(ndKey(v))){seen.add(ndKey(v));pick.push(v);}});}
+  const s2=seed%997;
+  const all=[it.ans,...pick];
+  return all.map((v,j)=>({v,o:((j+1)*(s2+13))%101})).sort((a,b)=>a.o-b.o).map(x=>x.v);
+}
+function ndQueue(){const td=today();
+  const act=ndPool().filter(ndActive).filter(it=>{const s=(S.nd||{})[it.id];return !(s&&s.lastDay===td);});
+  const pr=it=>{const s=(S.nd||{})[it.id];if(!s||!s.n)return 1;return s.last==='w'?0:2;};
+  act.sort((a,b)=>pr(a)-pr(b)||(((S.nd||{})[a.id]||{}).lastTs||0)-(((S.nd||{})[b.id]||{}).lastTs||0));
+  return act;}
+let ND=null;
+function renderNum(){
+  const st=ndStats();
+  app().innerHTML=`<div class="card" style="padding:20px 22px">
+    <h2 style="margin:0 0 6px;font-size:20px">🔢 숫자 드릴</h2>
+    <div class="czinfo">빈칸 노트에서 「몰랐음」 표시한 줄 중 숫자·범위·투여간격 칸만 객관식으로 · 보기는 같은 토픽 정리본의 같은 단위 실제 수치 · 서로 다른 ${ND_GRAD}일 연속 정답이면 졸업(그 줄 「몰랐음」 자동 해제)</div>
+    <div class="hsplit" style="margin-top:12px">
+      <div class="card metric"><div class="lab">오늘 남은 할당</div><div class="big">${st.quota}<small> / 하루 ${ND_DAILY}문 · 오늘 ${st.doneToday}문 풂</small></div></div>
+      <div class="card metric"><div class="lab">대상 칸</div><div class="big">${st.pool}<small> · 졸업 ${st.grad}</small></div></div>
+    </div>
+    <div class="todo-actions" style="margin-top:14px">
+      ${st.quota?`<button class="cta" id="ndGo">오늘 할당 풀기 <span class="n">${st.quota}</span></button>`:''}
+      ${st.due>st.quota?`<button class="cta alt" id="ndMore">더 풀기 <span class="n">${st.due-st.quota}</span></button>`:''}
+      ${!st.due?`<div class="czinfo">오늘 풀 문항 없음${st.pool?'':' — 빈칸 노트에서 「몰랐음」 표시한 숫자 줄이 생기면 자동으로 들어옴'}</div>`:''}
+    </div></div>`;
+  if($('#ndGo'))$('#ndGo').onclick=()=>ndStart(st.quota);
+  if($('#ndMore'))$('#ndMore').onclick=()=>ndStart(st.due);
+}
+function ndStart(n){const q=ndQueue().slice(0,n);if(!q.length){renderNum();return;}ND={q,i:0,ok:0,redo:[]};ndShow();}
+function ndShow(){
+  if(!ND)return renderNum();
+  if(ND.i>=ND.q.length){
+    if(ND.redo.length){ND.q=ND.redo;ND.redo=[];ND.i=0;ND.again=true;}
+    else{const r=ND;ND=null;app().innerHTML=`<div class="card" style="padding:20px 22px"><h2 style="margin:0 0 8px;font-size:20px">🔢 숫자 드릴 끝</h2>
+      <div class="czinfo">첫 시도 정답 ${r.ok} / ${r.total||r.q.length}</div><div class="todo-actions" style="margin-top:12px"><button class="cta" id="ndHome">숫자 드릴 처음으로</button><button class="cta alt" id="ndH2">홈</button></div></div>`;
+      $('#ndHome').onclick=()=>nav('num');$('#ndH2').onclick=()=>nav('home');return;}
+  }
+  if(!ND.total)ND.total=ND.q.length;
+  const it=ND.q[ND.i], L=it.L, tn=(TOPIC_BY[it.t]||{}).name||it.t;
+  const s=(S.nd||{})[it.id]||{};
+  let html='',pos=0;
+  L.m.forEach((m,j)=>{const v=L.t.slice(m.a,m.b);html+=esc(L.t.slice(pos,m.a))+(j===it.i?`<span class="czb" style="min-width:4em;border-bottom:2px solid var(--kr)"><span class="czhn">?</span></span>`:esc(v));pos=m.b;});
+  html+=esc(L.t.slice(pos));
+  const ch=ndChoices(it);
+  app().innerHTML=`<div class="card" style="padding:20px 22px">
+    <div class="czinfo">${ND.again?'다시 풀기 · ':''}${ND.i+1} / ${ND.q.length} · ${esc(tn)} · 연속 ${s.st||0}/${ND_GRAD}일</div>
+    <div class="czh" style="margin-top:8px">${esc(L.h)}</div>
+    <div class="czt" style="font-size:17px;line-height:1.7;margin:6px 0 14px">${html}</div>
+    <div class="todo-actions" id="ndCh" style="flex-direction:column;align-items:stretch">${ch.map((v,j)=>`<button class="cta alt" data-j="${j}" style="text-align:left">${KO[j+1]}. ${esc(v)}</button>`).join('')}</div>
+    <div id="ndFb"></div></div>`;
+  window.scrollTo(0,0);
+  app().querySelectorAll('#ndCh button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.done)return; app().querySelectorAll('#ndCh button').forEach(x=>x.dataset.done='1');
+    const v=ch[+b.dataset.j], good=czOk(v,it.ans,L.t);
+    app().querySelectorAll('#ndCh button').forEach(x=>{const vv=ch[+x.dataset.j];if(czOk(vv,it.ans,L.t)){x.style.background='var(--teal)';x.style.color='#fff';}else if(x===b){x.style.background='var(--kr)';x.style.color='#fff';}});
+    if(!ND.again)ndRecord(it,good); if(good&&!ND.again)ND.ok++; if(!good)ND.redo.push(it);
+    const h=NDH[it.t+'|'+it.k], ss=(S.nd||{})[it.id]||{};
+    $('#ndFb').innerHTML=`<div class="czinfo" style="margin-top:12px">${good?'정답':'오답 — 정답 '+esc(it.ans)+(it.unit&&it.unit!=='freq'?' '+esc(it.unit):'')}${ND.again?'':' · 연속 '+(ss.st||0)+'/'+ND_GRAD+'일'+(ss.g?' · 졸업 ✓':'')}</div>
+      ${h?`<div class="card" style="padding:12px 14px;margin-top:10px"><b>💡 연상</b><div style="margin-top:4px">${esc(h.m)}</div>${h.s?`<div class="czinfo" style="margin-top:4px">${esc(h.s)}</div>`:''}</div>`:''}
+      <div class="czinfo" style="margin-top:6px">출처 · ${esc(tn)} 정리 「${esc(L.h)}」</div>
+      <div class="todo-actions" style="margin-top:12px"><button class="cta" id="ndNext">다음</button><button class="cta alt" id="ndDig">정리 보기</button><button class="cta alt" id="ndStop">그만</button></div>`;
+    $('#ndNext').onclick=()=>{ND.i++;ndShow();};
+    $('#ndDig').onclick=()=>{ND=null;VIEW='curriculum';document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.v==='curriculum'));renderDigest(it.t);};
+    $('#ndStop').onclick=()=>{ND=null;nav('num');};
+  });
+}
+function ndRecord(it,good){const s=ndState(it.id),td=today();
+  if(s.g){delete s.g;delete s.gl;s.st=0;} /* 졸업 뒤 다시 나온 칸은 새로 시작 */
+  s.n++; if(good)s.ok++; s.last=good?'c':'w'; s.lastTs=Date.now();
+  if(s.lastDay!==td){s.days=(s.days||[]).concat([td+(good?':c':':w')]).slice(-10);}
+  if(good){if(s.lastDay!==td||s.st===0)s.st=(s.st||0)+1;}else s.st=0;
+  s.lastDay=td;
+  if(s.st>=ND_GRAD){s.g=Date.now();
+    const lineIds=it.L.m.map((m,j)=>m.k==='drug'?null:it.t+'|'+it.k+'|'+j).filter(Boolean);
+    if(lineIds.every(id=>S.nd[id]&&S.nd[id].g)){lineIds.forEach(id=>S.nd[id].gl=1);const st=czStore(it.t);delete st.miss[it.k];toast('줄 졸업 — 「몰랐음」 해제');}}
+  save();}
+
 /* boot */
+ndLoadHints();
 (async()=>{await load();try{const _h=(location.hash||'').match(/sync=([^&]+)/);if(_h){const _o=JSON.parse(decodeURIComponent(atob(_h[1])));if(_o&&_o.cfg&&_o.code){await SYNC.connect(_o.cfg,_o.code);history.replaceState(null,'',location.pathname+location.search);}}}catch(e){}if(!SYNC.on){const _c=localStorage.getItem('idpc_fb_cfg'),_k=localStorage.getItem('idpc_fb_code');if(_c&&_k){try{SYNC.connect(JSON.parse(_c),_k);}catch(e){}}}nav('home');try{TIMER.init();}catch(e){}try{INK.init();}catch(e){console.warn('ink',e);}})();
 </script>
 <script>
