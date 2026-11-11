@@ -2619,7 +2619,18 @@ function renderNum(){
       ${st.quota?`<button class="cta" id="ndGo">오늘 할당 풀기 <span class="n">${st.quota}</span></button>`:''}
       ${st.due>st.quota?`<button class="cta alt" id="ndMore">더 풀기 <span class="n">${st.due-st.quota}</span></button>`:''}
       ${!st.due?`<div class="czinfo">오늘 풀 문항 없음${st.pool?'':' — 빈칸 노트에서 「몰랐음」 표시한 숫자 줄이 생기면 자동으로 들어옴'}</div>`:''}
-    </div></div>`;
+    </div></div>
+  <div class="eyebrow" style="margin:14px 0 8px">토픽별로 풀기 · 정리본 숫자·공식 칸 (한 번에 최대 ${ND_TOPIC_N}칸, 틀린 칸·안 푼 칸 먼저)</div>
+  <div class="modegrid" id="ndTopicModes"></div>`;
+  const tm=$('#ndTopicModes'),N=S.nd||{};
+  const keys=[];TOPICS.forEach(t=>{keys.push(t.id);if(t.id==='gi')keys.push('gi~hep');});
+  keys.forEach(k=>{const pool=ndTopicPool(k);if(!pool.length)return;
+    const tried=pool.filter(it=>N[it.id]&&N[it.id].n).length, wr=pool.filter(it=>N[it.id]&&N[it.id].last==='w').length;
+    const btn=document.createElement('button');btn.className='mode alt';
+    btn.innerHTML=`<span class="ic" style="background:var(--teal-d)">#</span>
+      <span><span class="t">${esc(ndKeyName(k))}</span><br><span class="s">${pool.length}칸${wr?' · 최근 틀린 '+wr:''}</span></span><span class="cnt">${tried}/${pool.length}</span>`;
+    btn.onclick=()=>ndStartTopic(k);tm.appendChild(btn);});
+  if(!tm.children.length)tm.outerHTML='<div class="czinfo">숫자·공식 칸이 있는 토픽 없음</div>';
   if($('#ndGo'))$('#ndGo').onclick=()=>ndStart(st.quota);
   if($('#ndMore'))$('#ndMore').onclick=()=>ndStart(st.due);
 }
