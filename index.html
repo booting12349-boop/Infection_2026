@@ -527,7 +527,7 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
     <button data-v="home">홈</button>
     <button data-v="curriculum">출제범위</button>
     <button data-v="mnem">암기</button>
-    <button data-v="num">숫자</button>
+    <button data-v="num">숫자·공식</button>
     <button data-v="drill">케이스 드릴</button>
     <button data-v="mock">모의고사</button>
     <button data-v="plan">학습 일정</button>
@@ -1026,7 +1026,7 @@ function renderHome(){
     <h3>오늘 할 일</h3>
     <div class="todo-actions">
       <button class="cta" id="goDaily">오늘의 실전 <span class="n">${ds.left?ds.done+'/'+ds.n:'완료 ✓'}</span></button>
-      ${nd.pool?`<button class="cta alt" id="goNum">🔢 숫자 드릴 <span class="n">${nd.quota||'완료 ✓'}</span></button>`:''}
+      ${nd.pool?`<button class="cta alt" id="goNum">🔢 숫자·공식 드릴 <span class="n">${nd.quota||'완료 ✓'}</span></button>`:''}
       ${nMiss?`<button class="cta alt" id="goMissL">✍️ 몰랐음 빈칸 <span class="n">${nMiss}</span></button>`:''}
       ${nStar?`<button class="cta alt" id="goStarL">★ 별표 빈칸 <span class="n">${nStar}</span></button>`:''}
     </div>
@@ -1594,7 +1594,8 @@ function renderDigest(topicId){
       ${addBlocks(d)}
     </div>
     <div class="todo-actions" style="margin-top:14px">
-      ${czSets(topicId)?`<button class="cta" id="dgCloze">✍️ 빈칸 노트 <span class="n">${czSets(topicId)}세트</span></button>`:''}
+      ${ndTopicPool(topicId).length?`<button class="cta" id="dgNum">🔢 숫자·공식 문제 <span class="n">${ndTopicPool(topicId).length}</span></button>`:''}
+       ${czSets(topicId)?`<button class="cta alt" id="dgCloze">✍️ 빈칸 노트 <span class="n">${czSets(topicId)}세트</span></button>`:''}
       ${(()=>{const n=Object.keys(czStore(topicId).star).length;return n?`<button class="cta alt" id="dgCzStar">★ 별표 빈칸 <span class="n">${n}</span></button>`:'';})()}
       ${gqs.length?`<button class="cta" id="dgQuiz">바로 자가점검 풀기 <span class="n">${gqs.length}</span></button>`:''}
       ${[...new Set(gqs.map(g=>g.grp).filter(Boolean))].map(gp=>{
@@ -1605,6 +1606,7 @@ function renderDigest(topicId){
   $('#dgBack').onclick=()=>renderCurriculum();
   $('#dgBack2').onclick=()=>renderCurriculum();
   if($('#dgCzStar'))$('#dgCzStar').onclick=()=>renderCloze(topicId,0,'star');
+  if($('#dgNum'))$('#dgNum').onclick=()=>ndStartTopic(topicId);
   if($('#dgCloze'))$('#dgCloze').onclick=()=>{const st=czStore(topicId),n=czSets(topicId);let k=0;while(k<n-1&&st.done[k])k++;renderCloze(topicId,k,false);};
   if($('#dgNote'))$('#dgNote').oninput=e=>{if(S.topics[topicId]){S.topics[topicId].note=e.target.value;save();}};
   bindRounds();
@@ -1974,14 +1976,14 @@ function renderDone(){
     <div class="big">${c}/${ids.length}</div><div class="sub">이번 세션 정답 · 진도 저장됨</div>
     ${SESS.solveN?`<div class="sub" style="margin-top:4px">풀이시간 ${Math.round(SESS.solveMs/60000)}분 · 문항당 평균 ${Math.round(SESS.solveMs/SESS.solveN/1000)}초 <span style="color:var(--faint)">(해설 읽는 시간 제외)</span></div>`:''}
     ${(SESS.title||'').indexOf('쉬운 문제 훑기 · 가이드라인')===0&&MODES.easy().length?`<div class="sub" style="margin-top:6px"><button class="btn btn-ghost" id="moreEasy">ACCP 쉬운 문제도 보기 (${MODES.easy().length})</button></div>`:''}
-    ${(isGuide()&&(()=>{const ts=[...new Set(ids.map(i=>(GQ_BY_ID[i]||{}).topic))];return ts.length===1&&czSets(ts[0]);})())?`<div class="sub" style="margin-top:10px"><button class="btn btn-primary" id="goCloze">✍️ 이 토픽 빈칸 노트로 (10분)</button></div>`:''}
+    ${(()=>{const nt=SESS.mode==='daily'?null:sessNumTopic(ids,isGuide());if(!nt)return '';const n=Math.min(ND_TOPIC_N,ndTopicQueue(nt).length);return n?`<div class="sub" style="margin-top:10px"><button class="btn btn-primary" id="goNumT" data-t="${nt}">🔢 이 토픽 숫자·공식 문제로 (${n}문)</button></div>`:'';})()}
     <div class="row">${SESS.mode==='daily'?(()=>{const st=dailyStat();return st.left?`<button class="btn btn-primary" id="dailyMore">오늘의 실전 이어서 (${st.left})</button>`:'<span class="sub">오늘의 실전 40문 끝 ✓</span>';})():''}${(SESS.mode!=='daily'&&!isGuide()&&dueLeft)?`<button class="btn btn-primary" id="more">오늘 복습 이어서 (${dueLeft})</button>`:''}
       <button class="btn btn-ghost" id="back">드릴 홈</button>
       <button class="btn btn-ghost" id="home2">전체 홈</button></div></div>`;
   if($('#dailyMore'))$('#dailyMore').onclick=dailyStart;
   if($('#more'))$('#more').onclick=()=>startSession(MODES.due(),'오늘의 복습','due');
   $('#back').onclick=()=>renderDrillHome(); $('#home2').onclick=()=>nav('home');
-  if($('#goCloze'))$('#goCloze').onclick=()=>{const tp=(GQ_BY_ID[ids[0]]||{}).topic,st=czStore(tp),n=czSets(tp);let k=0;while(k<n-1&&st.done[k])k++;nav('curriculum');renderCloze(tp,k,false);};
+  if($('#goNumT'))$('#goNumT').onclick=e=>ndStartTopic(e.currentTarget.dataset.t);
   if($('#moreEasy'))$('#moreEasy').onclick=()=>startSession(MODES.easy(),'쉬운 문제 훑기 · ACCP','easy');
 }
 
@@ -2479,7 +2481,7 @@ const ND_LINES={};
 function ndLines(t){if(!ND_LINES[t])ND_LINES[t]=czLines(t);return ND_LINES[t];}
 function ndKey(s){return czSyn(czNorm0(s));}
 function ndPool(){
-  const out=[]; const cz=S.cz||{};
+  const out=ndxItems().filter(it=>{const s=(S.nd||{})[it.id];return s&&s.mx;}); const cz=S.cz||{};
   Object.keys(cz).forEach(t=>{if(!DIG_BY_TOPIC[t])return; const miss=cz[t].miss||{}; const ks=Object.keys(miss).filter(k=>miss[k]); if(!ks.length)return;
     const by={}; ndLines(t).forEach(L=>by[L.k]=L);
     ks.forEach(k=>{const L=by[k]; if(!L)return;
@@ -2499,6 +2501,7 @@ function ndNeed(){const seen=new Set(),out=[];
     out.push({key,topic:it.t,h:it.L.h,t:it.L.t,ans:it.L.m.filter(m=>m.k!=='drug').map(m=>it.L.t.slice(m.a,m.b))});if(out.length>=40)break;}
   return out;}
 function ndChoices(it){
+  if(it.L.x){const seed=[...it.id].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,7)%997;return it.L.ch.slice(0,4).map((v,j)=>({v,o:((j+1)*(seed+13))%101})).sort((a,b)=>a.o-b.o).map(x=>x.v);}
   const norm=ndKey(it.ans), inLine=new Set(it.L.m.map(m=>ndKey(it.L.t.slice(m.a,m.b))));
   const isR=v=>/\d\s*(?:[~–\-]|to)\s*\d/.test(v), num=v=>{const x=parseFloat(String(v).replace(/[^\d.]/g,' ').trim().split(/\s+/)[0]);return isFinite(x)&&x>0?x:null;};
   const aR=isR(it.ans), aN=num(it.ans);
@@ -2523,11 +2526,90 @@ function ndQueue(){const td=today();
   const pr=it=>{const s=(S.nd||{})[it.id];if(!s||!s.n)return 1;return s.last==='w'?0:2;};
   act.sort((a,b)=>pr(a)-pr(b)||(((S.nd||{})[a.id]||{}).lastTs||0)-(((S.nd||{})[b.id]||{}).lastTs||0));
   return act;}
+/* ===== 의학통계 공식·계산 문항 (2026-11-11) =====
+   의학통계 정리본은 개념 위주라 '숫자 칸'이 거의 없어, 공식(변수 도출식)과 2×2 계산 문항을 따로 둔다.
+   - 공식: 표준 정의식 (근거: DiCenzo R, ed. Clinical Pharmacist's Guide to Biostatistics and Literature Evaluation, 2nd ed. ACCP 2015 · Guyatt G, et al. Users' Guides to the Medical Literature, 3rd ed. 2015)
+   - 계산: 아래 증례 숫자로 허브가 직접 계산(정답·오답 보기 모두 계산값, 오답은 흔한 혼동 공식으로 계산한 값)
+   - 틀린 문항은 매일 숫자·공식 드릴 풀에 들어감(S.nd 의 mx 표시) */
+const NDX_SRC='DiCenzo R, ed. Clinical Pharmacist\'s Guide to Biostatistics and Literature Evaluation, 2nd ed. ACCP 2015 · Guyatt G, et al. Users\' Guides to the Medical Literature, 3rd ed.';
+const NDX_F=[
+ ['진단검사 2×2 (TP=a, FP=b, FN=c, TN=d)',[
+  ['민감도(sensitivity)','a/(a+c)'],['특이도(specificity)','d/(b+d)'],['양성예측도(PPV)','a/(a+b)'],['음성예측도(NPV)','d/(c+d)'],
+  ['양성우도비(LR+)','민감도/(1−특이도)'],['음성우도비(LR−)','(1−민감도)/특이도'],['검사 대상 중 유병률','(a+c)/(a+b+c+d)'],['정확도(accuracy)','(a+d)/(a+b+c+d)']]],
+ ['위험·효과 지표 (EER=치료/노출군 사건률, CER=대조군 사건률)',[
+  ['상대위험도(RR)','EER/CER'],['상대위험감소(RRR)','(CER−EER)/CER'],['절대위험감소(ARR)','CER−EER'],['NNT','1/ARR'],
+  ['NNH','1/ARI (ARI=EER−CER, 위해 사건)'],['오즈비(OR, 2×2: a·b=노출군 사건·비사건, c·d=비노출군 사건·비사건)','(a×d)/(b×c)']]],
+ ['확률·추론',[
+  ['오즈(odds)','확률/(1−확률)'],['확률(probability)','오즈/(1+오즈)'],['검사 후 오즈','검사 전 오즈 × 우도비'],
+  ['검정력(power)','1−β'],['평균의 표준오차(SEM)','SD/√n'],['평균의 95% 신뢰구간','평균 ± 1.96×SEM'],['변동계수(CV)','SD/평균 × 100%'],
+  ['점증적 비용-효과비(ICER)','(C신약−C기존)/(E신약−E기존)']]]];
+const NDX_D=[ /* 진단검사 증례: TP,FP,FN,TN */
+ {n:'증례 1 · 신속항원검사',a:90,b:40,c:10,d:860},
+ {n:'증례 2 · 선별검사',a:40,b:95,c:10,d:855}];
+const NDX_R=[ /* 효과 증례: 치료군 사건/n, 대조군 사건/n */
+ {n:'증례 3 · RCT(1차 결과 = 나쁜 사건)',te:60,tn:1000,ce:100,cn:1000},
+ {n:'증례 4 · 코호트(노출 = PPI, 결과 = CDI)',te:80,tn:4000,ce:192,cn:16000,harm:1}];
+function ndxP(x,d){return (Math.round(x*Math.pow(10,d))/Math.pow(10,d)).toString();}
+function ndxLines(){if(ndxLines.c)return ndxLines.c;const out=[];
+  const mk=(k,h,pre,ans,ch,why)=>{const t=pre+ans;out.push({k,h,t,m:[{a:pre.length,b:t.length,k:'num'}],x:1,ch,why});};
+  NDX_F.forEach(([g,list],gi)=>list.forEach(([nm,f],fi)=>{const others=list.filter(z=>z[1]!==f).map(z=>z[1]);
+    const pick=[];for(let j=0;j<others.length&&pick.length<3;j++){const z=others[(fi+1+j*2)%others.length];if(!pick.includes(z))pick.push(z);}
+    for(const z of others){if(pick.length>=3)break;if(!pick.includes(z))pick.push(z);}
+    mk('xf'+gi+'.'+fi,'공식 · '+g,nm+' = ',f,[f,...pick],'');}));
+  NDX_D.forEach((c,ci)=>{const {a,b,d}=c,cc=c.c,N=a+b+cc+d,se=a/(a+cc),sp=d/(b+d),ppv=a/(a+b),npv=d/(cc+d);
+    const V={'민감도':se*100,'특이도':sp*100,'PPV':ppv*100,'NPV':npv*100,'정확도':(a+d)/N*100,'유병률':(a+cc)/N*100};
+    const pre=`${c.n} — TP ${a} · FP ${b} · FN ${cc} · TN ${d} · `;
+    Object.keys(V).forEach((nm,j)=>{const ans=ndxP(V[nm],1)+'%';const ch=[ans];Object.keys(V).forEach(o=>{const v=ndxP(V[o],1)+'%';if(o!==nm&&!ch.includes(v)&&ch.length<4)ch.push(v);});
+      mk('xd'+ci+'.'+j,'계산 · 진단검사 2×2',pre+nm+' = ',ans,ch,'');});
+    const lp=se/(1-sp),ln=(1-se)/sp;
+    [['LR+',lp,[1/lp,se/sp,(1-sp)/se]],['LR−',ln,[1/ln,se/(1-sp),(1-sp)/(1-se)]]].forEach(([nm,v,w],j)=>{const ans=ndxP(v,2);const ch=[ans];w.forEach(x=>{const s=ndxP(x,2);if(!ch.includes(s)&&ch.length<4)ch.push(s);});
+      while(ch.length<4)ch.push(ndxP(v*(ch.length+1),2));mk('xl'+ci+'.'+j,'계산 · 진단검사 2×2',pre+nm+' = ',ans,ch,'');});});
+  NDX_R.forEach((c,ci)=>{const E=c.te/c.tn,C=c.ce/c.cn,pre=`${c.n} — 치료/노출군 ${c.te}/${c.tn} · 대조/비노출군 ${c.ce}/${c.cn} · `;
+    const odds=(c.te*(c.cn-c.ce))/((c.tn-c.te)*c.ce);
+    const items=c.harm?[['RR',ndxP(E/C,2),[ndxP(C/E,2),ndxP(odds,2),ndxP(Math.abs(E-C)*100,2)]],
+                        ['ARI(%p)',ndxP((E-C)*100,2),[ndxP(E/C,2),ndxP(E*100,2),ndxP((E-C)/C*100,1)]],
+                        ['NNH',String(Math.floor(1/(E-C))),[String(Math.ceil(1/E)),String(Math.floor(100/((E-C)*100)/10)),String(Math.floor(1/C))]],
+                        ['OR',ndxP(odds,2),[ndxP(E/C,2),ndxP(1/odds,2),ndxP(C/E,2)]]]
+                      :[['RR',ndxP(E/C,2),[ndxP(C/E,2),ndxP(1-E/C,2),ndxP(odds,2)]],
+                        ['RRR(%)',ndxP((C-E)/C*100,1),[ndxP((C-E)*100,1),ndxP(E/C*100,1),ndxP((C-E)/E*100,1)]],
+                        ['ARR(%p)',ndxP((C-E)*100,1),[ndxP((C-E)/C*100,1),ndxP(E*100,1),ndxP(C*100,1)]],
+                        ['NNT',String(Math.ceil(1/(C-E))),[String(Math.ceil(1/C)),String(Math.ceil(1/E)),String(Math.ceil(100/((C-E)/C*100)))]]];
+    items.forEach(([nm,ans,w],j)=>{const ch=[ans];w.forEach(x=>{if(!ch.includes(x)&&ch.length<4)ch.push(x);});let z=1;while(ch.length<4){const v=ndxP(+ans+z,2);if(!ch.includes(v))ch.push(v);z++;}
+      mk('xr'+ci+'.'+j,'계산 · 위험·효과 지표',pre+nm+' = ',ans,ch,nm==='NNT'?'NNT는 올림, NNH는 내림':'');});});
+  /* 검사 후 확률 */
+  [[20,6],[10,0.2],[40,4]].forEach(([p,lr],j)=>{const po=p/(100-p)*lr,pp=po/(1+po)*100,ans=ndxP(pp,1)+'%';
+    const ch=[ans,ndxP(p*lr,1)+'%',ndxP(po*100,1)+'%',ndxP(p/(100-p)*100,1)+'%'].filter((v,i,a)=>a.indexOf(v)===i);let z=5;while(ch.length<4){ch.push(ndxP(pp+z,1)+'%');z+=5;}
+    mk('xp'+j,'계산 · 검사 후 확률','검사 전 확률 '+p+'% · 우도비 '+lr+' → 검사 후 확률 = ',ans,ch,'');});
+  return ndxLines.c=out;}
+function ndxItems(){return ndxLines().map(L=>({id:'biostat|'+L.k+'|0',t:'biostat',k:L.k,i:0,L,m:L.m[0],ans:L.t.slice(L.m[0].a),unit:'',x:1}));}
+
+/* ===== 토픽별 숫자 문제 (2026-11-11) =====
+   - 문제풀이 세션 끝 / 토픽 정리 화면에서 그 토픽 정리본의 숫자·범위·투여간격 칸 전체를 객관식으로 (몰랐음 표시 여부와 무관)
+   - 한 번에 ND_TOPIC_N문 · 틀린 칸 → 먼저, 안 푼 칸 → 다음, 맞힌 칸은 오래된 순
+   - 틀린 칸은 그 줄을 자동으로 「몰랐음」 처리 → 매일 숫자 드릴 풀·노션 진도에 그대로 들어감
+   - 기록은 매일 숫자 드릴과 같은 S.nd 를 공유(연속 정답·졸업 동일) */
+const ND_TOPIC_N=20;
+const SEC2TOPIC={'항생제 스튜어드십 (ASP)':'asp','상기도 감염':'uri','하기도 감염':'pneumonia','HIV/AIDS':'hiv','생식기 감염·STD':'sti','중추신경계감염':'cns','요로감염':'uti','피부·연조직감염':'ssti','골관절감염':'bonejoint','복강내감염':'gi','감염심내막염':'endocarditis','진균감염':'fungal','결핵':'tb','수술 예방':'surgical','여행자·해외유입감염':'travel','코로나19':'covid','감염치료 원칙':'principles','의학통계·논문비평':'biostat','인플루엔자':'influenza','예방접종':'vacc','면역저하 숙주 감염':'transplant','바이러스 간염':'gi~hep'};
+const ND_FILT={hep:/간염|HBV|HCV|HAV|HBs|HBe|anti-HB|DAA|sofosbuvir|velpatasvir|glecaprevir|pibrentasvir|ledipasvir|entecavir|tenofovir|TAF|TDF|Maviret|Epclusa|Vosevi|Harvoni|SVR|ribavirin/i};
+function ndTopicPool(key){const [t,fk]=String(key).split('~'),F=fk?ND_FILT[fk]:null;if(!DIG_BY_TOPIC[t])return [];const out=t==='biostat'?ndxItems():[];
+  (t==='biostat'?[]:ndLines(t)).filter(L=>!F||F.test(L.h+' '+L.t)).forEach(L=>L.m.forEach((m,i)=>{if(m.k==='drug')return;out.push({id:t+'|'+L.k+'|'+i,t,k:L.k,i,L,m,ans:L.t.slice(m.a,m.b),unit:ndUnit(L.t,m)});}));
+  return out;}
+function ndTopicQueue(t){const N=S.nd||{};
+  const pr=it=>{const s=N[it.id];if(!s||!s.n)return 1;return s.last==='w'?0:2;};
+  return ndTopicPool(t).filter(it=>!(N[it.id]&&N[it.id].g&&!N[it.id].gl)).sort((a,b)=>pr(a)-pr(b)||((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0));}
+function ndStartTopic(t){const q=ndTopicQueue(t).slice(0,ND_TOPIC_N);
+  if(!q.length){toast('이 토픽 정리본에는 숫자 문제가 없어요');return;}
+  SESS=null;CZKEY=null;VIEW='num';document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.v==='num'));
+  ND={q,i:0,ok:0,redo:[],topic:t};ndShow();}
+function sessNumTopic(ids,guide){
+  const tps=[...new Set(ids.map(i=>guide?(GQ_BY_ID[i]||{}).topic:SEC2TOPIC[(BANK.find(b=>b.id===i)||{}).sectionKo]))];
+  return (tps.length===1&&tps[0]&&ndTopicPool(tps[0]).length)?tps[0]:null;}
+function ndKeyName(key){const [t,fk]=String(key).split('~');const n=(TOPIC_BY[t]||{}).name||t;return fk==='hep'?n+' · 바이러스 간염':n;}
 let ND=null;
 function renderNum(){
   const st=ndStats();
   app().innerHTML=`<div class="card" style="padding:20px 22px">
-    <h2 style="margin:0 0 6px;font-size:20px">🔢 숫자 드릴</h2>
+    <h2 style="margin:0 0 6px;font-size:20px">🔢 숫자·공식 드릴</h2>
     <div class="czinfo">빈칸 노트에서 「몰랐음」 표시한 줄 중 숫자·범위·투여간격 칸만 객관식으로 · 보기는 같은 토픽 정리본의 같은 단위 실제 수치 · 서로 다른 ${ND_GRAD}일 연속 정답이면 졸업(그 줄 「몰랐음」 자동 해제)</div>
     <div class="hsplit" style="margin-top:12px">
       <div class="card metric"><div class="lab">오늘 남은 할당</div><div class="big">${st.quota}<small> / 하루 ${ND_DAILY}문 · 오늘 ${st.doneToday}문 풂</small></div></div>
@@ -2546,8 +2628,9 @@ function ndShow(){
   if(!ND)return renderNum();
   if(ND.i>=ND.q.length){
     if(ND.redo.length){ND.q=ND.redo;ND.redo=[];ND.i=0;ND.again=true;}
-    else{const r=ND;ND=null;app().innerHTML=`<div class="card" style="padding:20px 22px"><h2 style="margin:0 0 8px;font-size:20px">🔢 숫자 드릴 끝</h2>
-      <div class="czinfo">첫 시도 정답 ${r.ok} / ${r.total||r.q.length}</div><div class="todo-actions" style="margin-top:12px"><button class="cta" id="ndHome">숫자 드릴 처음으로</button><button class="cta alt" id="ndH2">홈</button></div></div>`;
+    else{const r=ND;ND=null;app().innerHTML=`<div class="card" style="padding:20px 22px"><h2 style="margin:0 0 8px;font-size:20px">🔢 숫자·공식 드릴 끝</h2>
+      <div class="czinfo">첫 시도 정답 ${r.ok} / ${r.total||r.q.length}</div>${r.topic?`<div class="czinfo">틀린 칸은 「몰랐음」으로 넘어가 매일 숫자 드릴에서 다시 나옴</div>`:''}<div class="todo-actions" style="margin-top:12px">${r.topic&&ndTopicQueue(r.topic).length?`<button class="cta" id="ndTMore">이 토픽 숫자·공식 이어서 <span class="n">${Math.min(ND_TOPIC_N,ndTopicQueue(r.topic).length)}</span></button>`:''}<button class="cta${r.topic?' alt':''}" id="ndHome">숫자 드릴 처음으로</button><button class="cta alt" id="ndH2">홈</button></div></div>`;
+      if($('#ndTMore'))$('#ndTMore').onclick=()=>ndStartTopic(r.topic);
       $('#ndHome').onclick=()=>nav('num');$('#ndH2').onclick=()=>nav('home');return;}
   }
   if(!ND.total)ND.total=ND.q.length;
@@ -2566,13 +2649,13 @@ function ndShow(){
   window.scrollTo(0,0);
   app().querySelectorAll('#ndCh button').forEach(b=>b.onclick=()=>{
     if(b.dataset.done)return; app().querySelectorAll('#ndCh button').forEach(x=>x.dataset.done='1');
-    const v=ch[+b.dataset.j], good=czOk(v,it.ans,L.t);
-    app().querySelectorAll('#ndCh button').forEach(x=>{const vv=ch[+x.dataset.j];if(czOk(vv,it.ans,L.t)){x.style.background='var(--teal)';x.style.color='#fff';}else if(x===b){x.style.background='var(--kr)';x.style.color='#fff';}});
+    const v=ch[+b.dataset.j], good=L.x?v===it.ans:czOk(v,it.ans,L.t);
+    app().querySelectorAll('#ndCh button').forEach(x=>{const vv=ch[+x.dataset.j];if(L.x?vv===it.ans:czOk(vv,it.ans,L.t)){x.style.background='var(--teal)';x.style.color='#fff';}else if(x===b){x.style.background='var(--kr)';x.style.color='#fff';}});
     if(!ND.again)ndRecord(it,good); if(good&&!ND.again)ND.ok++; if(!good)ND.redo.push(it);
     const h=NDH[it.t+'|'+it.k], ss=(S.nd||{})[it.id]||{};
     $('#ndFb').innerHTML=`<div class="czinfo" style="margin-top:12px">${good?'정답':'오답 — 정답 '+esc(it.ans)+(it.unit&&it.unit!=='freq'?' '+esc(it.unit):'')}${ND.again?'':' · 연속 '+(ss.st||0)+'/'+ND_GRAD+'일'+(ss.g?' · 졸업 ✓':'')}</div>
       ${h?`<div class="card" style="padding:12px 14px;margin-top:10px"><b>💡 연상</b><div style="margin-top:4px">${esc(h.m)}</div>${h.s?`<div class="czinfo" style="margin-top:4px">${esc(h.s)}</div>`:''}</div>`:''}
-      <div class="czinfo" style="margin-top:6px">출처 · ${esc(tn)} 정리 「${esc(L.h)}」</div>
+      <div class="czinfo" style="margin-top:6px">${L.x?(L.why?esc(L.why)+' · ':'')+'근거 · '+esc(NDX_SRC)+(L.k[1]!=='f'?' (증례 숫자로 허브가 계산)':''):'출처 · '+esc(tn)+' 정리 「'+esc(L.h)+'」'}</div>
       <div class="todo-actions" style="margin-top:12px"><button class="cta" id="ndNext">다음</button><button class="cta alt" id="ndDig">정리 보기</button><button class="cta alt" id="ndStop">그만</button></div>`;
     $('#ndNext').onclick=()=>{ND.i++;ndShow();};
     $('#ndDig').onclick=()=>{ND=null;VIEW='curriculum';document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.v==='curriculum'));renderDigest(it.t);};
@@ -2580,6 +2663,7 @@ function ndShow(){
   });
 }
 function ndRecord(it,good){const s=ndState(it.id),td=today();
+  if(!good){if(it.x||it.L.x)s.mx=1;else{try{czStore(it.t).miss[it.k]=true;}catch(e){}}} /* 틀린 칸의 줄 → 「몰랐음」 (매일 숫자 드릴 풀로) */
   if(s.g){delete s.g;delete s.gl;s.st=0;} /* 졸업 뒤 다시 나온 칸은 새로 시작 */
   s.n++; if(good)s.ok++; s.last=good?'c':'w'; s.lastTs=Date.now();
   if(s.lastDay!==td){s.days=(s.days||[]).concat([td+(good?':c':':w')]).slice(-10);}
