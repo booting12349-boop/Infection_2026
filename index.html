@@ -1594,7 +1594,7 @@ function renderDigest(topicId){
       ${addBlocks(d)}
     </div>
     <div class="todo-actions" style="margin-top:14px">
-      ${ndTopicPool(topicId).length?`<button class="cta" id="dgNum">🔢 숫자·공식 문제 <span class="n">${ndTopicPool(topicId).length}</span></button>`:''}
+      ${ndTopicPool(topicId).length?`<button class="cta" id="dgNum">🔢 숫자·공식 문제 <span class="n">${Math.min(ND_TOPIC_N,ndTopicQueue(topicId).length)||ndTopicPool(topicId).length}</span><span style="display:block;font-size:12px;font-weight:400;opacity:.85;margin-top:2px">${ndProgTxt(topicId)}</span></button>`:''}
        ${czSets(topicId)?`<button class="cta alt" id="dgCloze">✍️ 빈칸 노트 <span class="n">${czSets(topicId)}세트</span></button>`:''}
       ${(()=>{const n=Object.keys(czStore(topicId).star).length;return n?`<button class="cta alt" id="dgCzStar">★ 별표 빈칸 <span class="n">${n}</span></button>`:'';})()}
       ${gqs.length?`<button class="cta" id="dgQuiz">바로 자가점검 풀기 <span class="n">${gqs.length}</span></button>`:''}
@@ -1976,7 +1976,7 @@ function renderDone(){
     <div class="big">${c}/${ids.length}</div><div class="sub">이번 세션 정답 · 진도 저장됨</div>
     ${SESS.solveN?`<div class="sub" style="margin-top:4px">풀이시간 ${Math.round(SESS.solveMs/60000)}분 · 문항당 평균 ${Math.round(SESS.solveMs/SESS.solveN/1000)}초 <span style="color:var(--faint)">(해설 읽는 시간 제외)</span></div>`:''}
     ${(SESS.title||'').indexOf('쉬운 문제 훑기 · 가이드라인')===0&&MODES.easy().length?`<div class="sub" style="margin-top:6px"><button class="btn btn-ghost" id="moreEasy">ACCP 쉬운 문제도 보기 (${MODES.easy().length})</button></div>`:''}
-    ${(()=>{const nt=SESS.mode==='daily'?null:sessNumTopic(ids,isGuide());if(!nt)return '';const n=Math.min(ND_TOPIC_N,ndTopicQueue(nt).length);return n?`<div class="sub" style="margin-top:10px"><button class="btn btn-primary" id="goNumT" data-t="${nt}">🔢 이 토픽 숫자·공식 문제로 (${n}문)</button></div>`:'';})()}
+    ${(()=>{const nt=SESS.mode==='daily'?null:sessNumTopic(ids,isGuide());if(!nt)return '';const n=Math.min(ND_TOPIC_N,ndTopicQueue(nt).length);return n?`<div class="sub" style="margin-top:10px"><button class="btn btn-primary" id="goNumT" data-t="${nt}">🔢 이 토픽 숫자·공식 문제로 (${n}문)</button><div class="czinfo" style="margin-top:4px">${ndProgTxt(nt)}</div></div>`:'';})()}
     <div class="row">${SESS.mode==='daily'?(()=>{const st=dailyStat();return st.left?`<button class="btn btn-primary" id="dailyMore">오늘의 실전 이어서 (${st.left})</button>`:'<span class="sub">오늘의 실전 40문 끝 ✓</span>';})():''}${(SESS.mode!=='daily'&&!isGuide()&&dueLeft)?`<button class="btn btn-primary" id="more">오늘 복습 이어서 (${dueLeft})</button>`:''}
       <button class="btn btn-ghost" id="back">드릴 홈</button>
       <button class="btn btn-ghost" id="home2">전체 홈</button></div></div>`;
@@ -2597,6 +2597,10 @@ function ndTopicPool(key){const [t,fk]=String(key).split('~'),F=fk?ND_FILT[fk]:n
 function ndTopicQueue(t){const N=S.nd||{};
   const pr=it=>{const s=N[it.id];if(!s||!s.n)return 1;return s.last==='w'?0:2;};
   return ndTopicPool(t).filter(it=>!(N[it.id]&&N[it.id].g&&!N[it.id].gl)).sort((a,b)=>pr(a)-pr(b)||((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0));}
+function ndTopicProg(t){const N=S.nd||{},P=ndTopicPool(t);let done=0,wrong=0;P.forEach(it=>{const x=N[it.id];if(x&&x.n){done++;if(x.last==='w'&&!(x.g&&!x.gl))wrong++;}});
+  const left=P.length-done;return {n:P.length,done,left,wrong,sets:Math.ceil((left+wrong)/ND_TOPIC_N)};}
+function ndProgTxt(t){const p=ndTopicProg(t);if(!p.n)return '';
+  return p.left||p.wrong?`첫 바퀴 ${p.done}/${p.n}칸 · 안 푼 ${p.left}칸 · 틀린 ${p.wrong}칸 → 남은 ${p.sets}세트`:`첫 바퀴 끝 ✓ (${p.n}칸)`;}
 function ndStartTopic(t){const q=ndTopicQueue(t).slice(0,ND_TOPIC_N);
   if(!q.length){toast('이 토픽 정리본에는 숫자 문제가 없어요');return;}
   SESS=null;CZKEY=null;VIEW='num';document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.v==='num'));
@@ -2640,7 +2644,7 @@ function ndShow(){
   if(ND.i>=ND.q.length){
     if(ND.redo.length){ND.q=ND.redo;ND.redo=[];ND.i=0;ND.again=true;}
     else{const r=ND;ND=null;app().innerHTML=`<div class="card" style="padding:20px 22px"><h2 style="margin:0 0 8px;font-size:20px">🔢 숫자·공식 드릴 끝</h2>
-      <div class="czinfo">첫 시도 정답 ${r.ok} / ${r.total||r.q.length}</div>${r.topic?`<div class="czinfo">틀린 칸은 「몰랐음」으로 넘어가 매일 숫자 드릴에서 다시 나옴</div>`:''}<div class="todo-actions" style="margin-top:12px">${r.topic&&ndTopicQueue(r.topic).length?`<button class="cta" id="ndTMore">이 토픽 숫자·공식 이어서 <span class="n">${Math.min(ND_TOPIC_N,ndTopicQueue(r.topic).length)}</span></button>`:''}<button class="cta${r.topic?' alt':''}" id="ndHome">숫자 드릴 처음으로</button><button class="cta alt" id="ndH2">홈</button></div></div>`;
+      <div class="czinfo">첫 시도 정답 ${r.ok} / ${r.total||r.q.length}</div>${r.topic?`<div class="czinfo" style="font-weight:600">${esc((TOPIC_BY[r.topic]||{}).name||r.topic)} ${ndProgTxt(r.topic)}</div><div class="czinfo">틀린 칸은 「몰랐음」으로 넘어가 매일 숫자 드릴에서 다시 나옴</div>`:''}<div class="todo-actions" style="margin-top:12px">${r.topic&&ndTopicQueue(r.topic).length?`<button class="cta" id="ndTMore">이 토픽 숫자·공식 이어서 <span class="n">${Math.min(ND_TOPIC_N,ndTopicQueue(r.topic).length)}</span></button>`:''}<button class="cta${r.topic?' alt':''}" id="ndHome">숫자 드릴 처음으로</button><button class="cta alt" id="ndH2">홈</button></div></div>`;
       if($('#ndTMore'))$('#ndTMore').onclick=()=>ndStartTopic(r.topic);
       $('#ndHome').onclick=()=>nav('num');$('#ndH2').onclick=()=>nav('home');return;}
   }
@@ -2652,7 +2656,7 @@ function ndShow(){
   html+=esc(L.t.slice(pos));
   const ch=ndChoices(it);
   app().innerHTML=`<div class="card" style="padding:20px 22px">
-    <div class="czinfo">${ND.again?'다시 풀기 · ':''}${ND.i+1} / ${ND.q.length} · ${esc(tn)} · 연속 ${s.st||0}/${ND_GRAD}일</div>
+    <div class="czinfo">${ND.again?'다시 풀기 · ':''}${ND.i+1} / ${ND.q.length} · ${esc(tn)} · 연속 ${s.st||0}/${ND_GRAD}일${ND.topic?' · '+ndProgTxt(ND.topic):''}</div>
     <div class="czh" style="margin-top:8px">${esc(L.h)}</div>
     <div class="czt" style="font-size:17px;line-height:1.7;margin:6px 0 14px">${html}</div>
     <div class="todo-actions" id="ndCh" style="flex-direction:column;align-items:stretch">${ch.map((v,j)=>`<button class="cta alt" data-j="${j}" style="text-align:left">${KO[j+1]}. ${esc(v)}</button>`).join('')}</div>
