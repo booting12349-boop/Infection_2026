@@ -1011,6 +1011,7 @@ function renderHome(){
   const todoT=TOPICS.filter(t=>{const g=GQ_BY_TOPIC[t.id]||[];return g.length&&!g.some(x=>S.gq[x.id]&&S.gq[x.id].seen);}); /* 문항을 한 번도 안 푼 토픽 */
   const ds=dailyStat(); let nd={pool:0,quota:0}; try{nd=ndStats();}catch(e){}
   const MISS=homeLists('miss'), STAR=homeLists('star'), nMiss=MISS.reduce((a,x)=>a+x.n,0), nStar=STAR.reduce((a,x)=>a+x.n,0);
+  let nNdW=0;try{nNdW=ndWrongItems().length;}catch(e){} /* 2026-11-13: 홈의 몰랐음·별표 빈칸 버튼 → 숫자·공식 틀린 칸으로 대체 */
   const bar=(x,col)=>`<div class="bar"><i style="width:${x.stable/x.total*100}%;background:${col}"></i></div>`;
   const row=(lab,x,col)=>`<div style="margin-top:10px"><div class="lab"><span class="dot" style="background:${col}"></span>${lab}</div>
       <div class="sub" style="font-size:13px;margin-top:4px">안정권 <b style="font-family:var(--mono)">${x.stable}</b>/${x.total} · 오답노트 <b style="font-family:var(--mono);color:var(--kr)">${x.wl}</b> · 안 푼 문항 <b style="font-family:var(--mono)">${x.un}</b></div>${bar(x,col)}</div>`;
@@ -1027,8 +1028,7 @@ function renderHome(){
     <div class="todo-actions">
       <button class="cta" id="goDaily">오늘의 실전 <span class="n">${ds.left?ds.done+'/'+ds.n:'완료 ✓'}</span></button>
       ${nd.pool?`<button class="cta alt" id="goNum">🔢 숫자·공식 드릴 <span class="n">${nd.quota||'완료 ✓'}</span></button>`:''}
-      ${nMiss?`<button class="cta alt" id="goMissL">✍️ 몰랐음 빈칸 <span class="n">${nMiss}</span></button>`:''}
-      ${nStar?`<button class="cta alt" id="goStarL">★ 별표 빈칸 <span class="n">${nStar}</span></button>`:''}
+      ${nNdW?`<button class="cta alt" id="goNdWrong">✖ 숫자·공식 틀린 칸 <span class="n">${nNdW}</span></button>`:''}
     </div>
     <div id="pickBox"></div>
     <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px">더보기 · 틀린 문제 · 전체 복습 · 출제범위</summary>
@@ -1067,8 +1067,7 @@ function renderHome(){
   const pick=(L,kind)=>{const box=$('#pickBox');if(box.dataset.k===kind){box.innerHTML='';box.dataset.k='';return;}box.dataset.k=kind;
     box.innerHTML=`<div class="todo-actions" style="margin-top:8px">${L.sort((a,b)=>b.n-a.n).map(x=>`<button class="cta alt" data-pk="${x.t}">${esc((TOPIC_BY[x.t]||{}).name||x.t)} <span class="n">${x.n}</span></button>`).join('')}</div>`;
     box.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.pk,0,kind==='miss'?true:'star');});};
-  if($('#goMissL'))$('#goMissL').onclick=()=>pick(MISS,'miss');
-  if($('#goStarL'))$('#goStarL').onclick=()=>pick(STAR,'star');
+  if($('#goNdWrong'))$('#goNdWrong').onclick=ndStartWrong;
   $('#goDue').onclick=()=>{const ids=MODES.due();ids.length?(nav('drill'),startSession(ids,'오늘의 복습','due')):toast('복습할 ACCP 문제가 없어요');};
   if($('#goWrong'))$('#goWrong').onclick=()=>{const ids=MODES.wrong();if(ids.length){nav('drill');startSession(ids,'틀린 문제만','wrong');}};
   if($('#goGWrong'))$('#goGWrong').onclick=()=>{const ids=GMODES.wrong();if(ids.length){nav('drill');startSession(ids,'가이드라인 · 틀린 문제만','guide');}};
@@ -2608,6 +2607,15 @@ function ndStartTopic(t){const q=ndTopicQueue(t).slice(0,ND_TOPIC_N);
 function sessNumTopic(ids,guide){
   const tps=[...new Set(ids.map(i=>guide?(GQ_BY_ID[i]||{}).topic:SEC2TOPIC[(BANK.find(b=>b.id===i)||{}).sectionKo]))];
   return (tps.length===1&&tps[0]&&ndTopicPool(tps[0]).length)?tps[0]:null;}
+/* 숫자·공식 틀린 칸 모음 (2026-11-13): 모든 토픽 숫자·공식 칸 중 마지막 풀이가 오답이고 졸업 전인 칸, 오래된 순 */
+function ndWrongItems(){const N=S.nd||{},seen=new Set(),out=[];
+  Object.keys(DIG_BY_TOPIC).forEach(t=>{let P=[];try{P=ndTopicPool(t);}catch(e){}
+    P.forEach(it=>{if(seen.has(it.id))return;seen.add(it.id);const s=N[it.id];if(s&&s.n&&s.last==='w'&&!(s.g&&!s.gl))out.push(it);});});
+  return out.sort((a,b)=>((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0));}
+function ndStartWrong(){const q=ndWrongItems().slice(0,ND_TOPIC_N);
+  if(!q.length){toast('틀린 숫자·공식 칸이 없어요');return;}
+  SESS=null;CZKEY=null;VIEW='num';document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.v==='num'));
+  ND={q,i:0,ok:0,redo:[]};ndShow();}
 function ndKeyName(key){const [t,fk]=String(key).split('~');const n=(TOPIC_BY[t]||{}).name||t;return fk==='hep'?n+' · 바이러스 간염':n;}
 let ND=null;
 function renderNum(){
