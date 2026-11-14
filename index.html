@@ -2487,7 +2487,15 @@ function ndPool(){
       L.m.forEach((m,i)=>{if(m.k==='drug')return; out.push({id:t+'|'+k+'|'+i,t,k,i,L,m,ans:L.t.slice(m.a,m.b),unit:ndUnit(L.t,m)});});});});
   return out;}
 function ndState(id){S.nd=S.nd||{};return S.nd[id]||(S.nd[id]={n:0,ok:0,st:0,lastDay:null,lastTs:0,last:null,days:[]});}
-function ndActive(it){const s=(S.nd||{})[it.id];return !(s&&s.g)||!!s.gl; /* gl: 줄 전체 졸업 뒤 다시 「몰랐음」이 된 칸 → 다시 대상 */}
+/* 숫자·공식 「쉬움」 (2026-11-14): 칸 단위 표시(S.nd[id].e). 매일 할당·토픽별 풀기·틀린 칸 모음에서 빠짐 — 삭제 아님.
+   숫자 드릴 화면의 「쉬움 칸 모아 보기」로 따로 보거나, 「토픽별 풀기에 쉬움 칸 포함」을 켜면 함께 나옴 */
+function ndEasy(it){const s=(S.nd||{})[it.id];return !!(s&&s.e);}
+function ndEasyInc(){try{return localStorage.getItem('idpc_ndeasy_inc')==='1';}catch(e){return false;}}
+function ndEasyItems(){const seen=new Set(),out=[];
+  Object.keys(DIG_BY_TOPIC).forEach(t=>{let P=[];try{P=ndTopicPool(t);}catch(e){}P.forEach(it=>{if(seen.has(it.id)||!ndEasy(it))return;seen.add(it.id);out.push(it);});});
+  return out.sort((a,b)=>((S.nd[a.id]||{}).lastTs||0)-((S.nd[b.id]||{}).lastTs||0));}
+function ndToggleEasy(it){const s=ndState(it.id);if(s.e)delete s.e;else s.e=Date.now();save();return !!s.e;}
+function ndActive(it){const s=(S.nd||{})[it.id];if(s&&s.e)return false;return !(s&&s.g)||!!s.gl; /* gl: 줄 전체 졸업 뒤 다시 「몰랐음」이 된 칸 → 다시 대상 */}
 function ndStats(){const P=ndPool(),td=today();const act=P.filter(ndActive);
   const doneToday=act.filter(it=>{const s=(S.nd||{})[it.id];return s&&s.lastDay===td;}).length;
   const grad=Object.values(S.nd||{}).filter(s=>s&&s.g).length; /* 누적 졸업 칸 */
@@ -2595,11 +2603,12 @@ function ndTopicPool(key){const [t,fk]=String(key).split('~'),F=fk?ND_FILT[fk]:n
   return out;}
 function ndTopicQueue(t){const N=S.nd||{};
   const pr=it=>{const s=N[it.id];if(!s||!s.n)return 1;return s.last==='w'?0:2;};
-  return ndTopicPool(t).filter(it=>!(N[it.id]&&N[it.id].g&&!N[it.id].gl)).sort((a,b)=>pr(a)-pr(b)||((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0));}
-function ndTopicProg(t){const N=S.nd||{},P=ndTopicPool(t);let done=0,wrong=0;P.forEach(it=>{const x=N[it.id];if(x&&x.n){done++;if(x.last==='w'&&!(x.g&&!x.gl))wrong++;}});
-  const left=P.length-done;return {n:P.length,done,left,wrong,sets:Math.ceil((left+wrong)/ND_TOPIC_N)};}
+  const inc=ndEasyInc();return ndTopicPool(t).filter(it=>!(N[it.id]&&N[it.id].g&&!N[it.id].gl)&&(inc||!(N[it.id]&&N[it.id].e))).sort((a,b)=>pr(a)-pr(b)||((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0));}
+function ndTopicProg(t){const N=S.nd||{},inc=ndEasyInc(),A=ndTopicPool(t),P=A.filter(it=>inc||!(N[it.id]&&N[it.id].e));let done=0,wrong=0;P.forEach(it=>{const x=N[it.id];if(x&&x.n){done++;if(x.last==='w'&&!(x.g&&!x.gl))wrong++;}});
+  const left=P.length-done;return {n:P.length,done,left,wrong,sets:Math.ceil((left+wrong)/ND_TOPIC_N),easy:A.length-A.filter(it=>!(N[it.id]&&N[it.id].e)).length};}
 function ndProgTxt(t){const p=ndTopicProg(t);if(!p.n)return '';
-  return p.left||p.wrong?`첫 바퀴 ${p.done}/${p.n}칸 · 안 푼 ${p.left}칸 · 틀린 ${p.wrong}칸 → 남은 ${p.sets}세트`:`첫 바퀴 끝 ✓ (${p.n}칸)`;}
+  const ez=p.easy?` · 쉬움 ${p.easy}칸 ${ndEasyInc()?'포함':'제외'}`:'';
+  return (p.left||p.wrong?`첫 바퀴 ${p.done}/${p.n}칸 · 안 푼 ${p.left}칸 · 틀린 ${p.wrong}칸 → 남은 ${p.sets}세트`:`첫 바퀴 끝 ✓ (${p.n}칸)`)+ez;}
 function ndStartTopic(t){const q=ndTopicQueue(t).slice(0,ND_TOPIC_N);
   if(!q.length){toast('이 토픽 정리본에는 숫자 문제가 없어요');return;}
   SESS=null;CZKEY=null;VIEW='num';document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.v==='num'));
@@ -2610,7 +2619,7 @@ function sessNumTopic(ids,guide){
 /* 숫자·공식 틀린 칸 모음 (2026-11-13): 모든 토픽 숫자·공식 칸 중 마지막 풀이가 오답이고 졸업 전인 칸, 오래된 순 */
 function ndWrongItems(){const N=S.nd||{},seen=new Set(),out=[];
   Object.keys(DIG_BY_TOPIC).forEach(t=>{let P=[];try{P=ndTopicPool(t);}catch(e){}
-    P.forEach(it=>{if(seen.has(it.id))return;seen.add(it.id);const s=N[it.id];if(s&&s.n&&s.last==='w'&&!(s.g&&!s.gl))out.push(it);});});
+    P.forEach(it=>{if(seen.has(it.id))return;seen.add(it.id);const s=N[it.id];if(s&&s.n&&!s.e&&s.last==='w'&&!(s.g&&!s.gl))out.push(it);});});
   return out.sort((a,b)=>((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0));}
 function ndStartWrong(){const q=ndWrongItems().slice(0,ND_TOPIC_N);
   if(!q.length){toast('틀린 숫자·공식 칸이 없어요');return;}
@@ -2632,6 +2641,10 @@ function renderNum(){
       ${st.due>st.quota?`<button class="cta alt" id="ndMore">더 풀기 <span class="n">${st.due-st.quota}</span></button>`:''}
       ${!st.due?`<div class="czinfo">오늘 풀 문항 없음${st.pool?'':' — 빈칸 노트에서 「몰랐음」 표시한 숫자 줄이 생기면 자동으로 들어옴'}</div>`:''}
     </div></div>
+  ${(()=>{const ne=ndEasyItems().length;return `<div class="card" style="padding:12px 16px;margin-top:12px"><div class="todo-actions" style="align-items:center">
+      ${ne?`<button class="cta alt" id="ndEasyGo">쉬움 칸 모아 보기 <span class="n">${ne}</span></button>`:''}
+      <label class="czinfo" style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="ndEasyInc" ${ndEasyInc()?'checked':''}> 토픽별 풀기에 쉬움 칸 포함</label></div>
+      <div class="czinfo" style="margin-top:4px">「쉬움」 표시 칸은 매일 할당·토픽별 풀기·틀린 칸 모음에서 빠짐(삭제 아님) · 문제 화면의 「쉬움」 버튼으로 표시/해제</div></div>`;})()}
   <div class="eyebrow" style="margin:14px 0 8px">토픽별로 풀기 · 정리본 숫자·공식 칸 (한 번에 최대 ${ND_TOPIC_N}칸, 틀린 칸·안 푼 칸 먼저)</div>
   <div class="modegrid" id="ndTopicModes"></div>`;
   const tm=$('#ndTopicModes'),N=S.nd||{};
@@ -2640,9 +2653,11 @@ function renderNum(){
     const tried=pool.filter(it=>N[it.id]&&N[it.id].n).length, wr=pool.filter(it=>N[it.id]&&N[it.id].last==='w').length;
     const btn=document.createElement('button');btn.className='mode alt';
     btn.innerHTML=`<span class="ic" style="background:var(--teal-d)">#</span>
-      <span><span class="t">${esc(ndKeyName(k))}</span><br><span class="s">${pool.length}칸${wr?' · 최근 틀린 '+wr:''}</span></span><span class="cnt">${tried}/${pool.length}</span>`;
+      <span><span class="t">${esc(ndKeyName(k))}</span><br><span class="s">${pool.length}칸${wr?' · 최근 틀린 '+wr:''}${(()=>{const e=pool.filter(it=>N[it.id]&&N[it.id].e).length;return e?' · 쉬움 '+e:'';})()}</span></span><span class="cnt">${tried}/${pool.length}</span>`;
     btn.onclick=()=>ndStartTopic(k);tm.appendChild(btn);});
   if(!tm.children.length)tm.outerHTML='<div class="czinfo">숫자·공식 칸이 있는 토픽 없음</div>';
+  if($('#ndEasyGo'))$('#ndEasyGo').onclick=()=>{const q=ndEasyItems();if(!q.length)return;ND={q,i:0,ok:0,redo:[],easyView:1};ndShow();};
+  if($('#ndEasyInc'))$('#ndEasyInc').onchange=e=>{try{localStorage.setItem('idpc_ndeasy_inc',e.target.checked?'1':'0');}catch(x){}renderNum();};
   if($('#ndGo'))$('#ndGo').onclick=()=>ndStart(st.quota);
   if($('#ndMore'))$('#ndMore').onclick=()=>ndStart(st.due);
 }
@@ -2664,12 +2679,14 @@ function ndShow(){
   html+=esc(L.t.slice(pos));
   const ch=ndChoices(it);
   app().innerHTML=`<div class="card" style="padding:20px 22px">
-    <div class="czinfo">${ND.again?'다시 풀기 · ':''}${ND.i+1} / ${ND.q.length} · ${esc(tn)} · 연속 ${s.st||0}/${ND_GRAD}일${ND.topic?' · '+ndProgTxt(ND.topic):''}</div>
+    <div class="czinfo" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1">${ND.easyView?'쉬움 칸 모아 보기 · ':''}${ND.again?'다시 풀기 · ':''}${ND.i+1} / ${ND.q.length} · ${esc(tn)} · 연속 ${s.st||0}/${ND_GRAD}일${ND.topic?' · '+ndProgTxt(ND.topic):''}</span><button class="flag easybtn ${s.e?'on':''}" id="ndEasyBtn" title="매일 할당·토픽별 풀기에서 빼고 「쉬움 칸 모아 보기」로만 봄">${s.e?'쉬움 · 제외됨':'쉬움 · 제외'}</button></div>
     <div class="czh" style="margin-top:8px">${esc(L.h)}</div>
     <div class="czt" style="font-size:17px;line-height:1.7;margin:6px 0 14px">${html}</div>
     <div class="todo-actions" id="ndCh" style="flex-direction:column;align-items:stretch">${ch.map((v,j)=>`<button class="cta alt" data-j="${j}" style="text-align:left">${KO[j+1]}. ${esc(v)}</button>`).join('')}</div>
     <div id="ndFb"></div></div>`;
   window.scrollTo(0,0);
+  $('#ndEasyBtn').onclick=()=>{const on=ndToggleEasy(it),b=$('#ndEasyBtn');b.classList.toggle('on',on);b.textContent=on?'쉬움 · 제외됨':'쉬움 · 제외';
+    toast(on?'숫자 드릴 할당·토픽별 풀기에서 뺐어요 — 「쉬움 칸 모아 보기」에서 볼 수 있어요':'다시 숫자 드릴 대상에 넣었어요');};
   app().querySelectorAll('#ndCh button').forEach(b=>b.onclick=()=>{
     if(b.dataset.done)return; app().querySelectorAll('#ndCh button').forEach(x=>x.dataset.done='1');
     const v=ch[+b.dataset.j], good=L.x?v===it.ans:czOk(v,it.ans,L.t);
