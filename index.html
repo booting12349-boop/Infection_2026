@@ -805,7 +805,7 @@ let VIEW='home';
 let DIGVIEW=null;
 function nav(v){VIEW=v;CZKEY=null;SESS=null;if(typeof ND!=='undefined')ND=null;clearInterval(MOCKT);if(v!=='drill')tSet(null);markVisit();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='num')renderNum(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else if(v==='mock')renderMockHome(); else renderDrillHome();
+  if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='num')renderNum(); else if(v==='calc')renderCalc(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else if(v==='mock')renderMockHome(); else renderDrillHome();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>nav(b.dataset.v));
@@ -1028,6 +1028,7 @@ function renderHome(){
     <div class="todo-actions">
       <button class="cta" id="goDaily">오늘의 실전 <span class="n">${ds.left?ds.done+'/'+ds.n:'완료 ✓'}</span></button>
       ${nd.pool?`<button class="cta alt" id="goNum">🔢 숫자·공식 드릴 <span class="n">${nd.quota||'완료 ✓'}</span></button>`:''}
+      ${(()=>{const n=calcLeft();return `<button class="cta alt" id="goCalc">🧮 통계 계산 통문제 <span class="n">${n||'완료 ✓'}</span></button>`;})()}
       ${nNdW?`<button class="cta alt" id="goNdWrong">✖ 숫자·공식 틀린 칸 <span class="n">${nNdW}</span></button>`:''}
     </div>
     <div id="pickBox"></div>
@@ -1067,7 +1068,7 @@ function renderHome(){
   const pick=(L,kind)=>{const box=$('#pickBox');if(box.dataset.k===kind){box.innerHTML='';box.dataset.k='';return;}box.dataset.k=kind;
     box.innerHTML=`<div class="todo-actions" style="margin-top:8px">${L.sort((a,b)=>b.n-a.n).map(x=>`<button class="cta alt" data-pk="${x.t}">${esc((TOPIC_BY[x.t]||{}).name||x.t)} <span class="n">${x.n}</span></button>`).join('')}</div>`;
     box.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>{nav('curriculum');renderCloze(b.dataset.pk,0,kind==='miss'?true:'star');});};
-  if($('#goNdWrong'))$('#goNdWrong').onclick=ndStartWrong;
+  if($('#goNdWrong'))$('#goNdWrong').onclick=ndStartWrong;   if($('#goCalc'))$('#goCalc').onclick=()=>nav('calc');
   $('#goDue').onclick=()=>{const ids=MODES.due();ids.length?(nav('drill'),startSession(ids,'오늘의 복습','due')):toast('복습할 ACCP 문제가 없어요');};
   if($('#goWrong'))$('#goWrong').onclick=()=>{const ids=MODES.wrong();if(ids.length){nav('drill');startSession(ids,'틀린 문제만','wrong');}};
   if($('#goGWrong'))$('#goGWrong').onclick=()=>{const ids=GMODES.wrong();if(ids.length){nav('drill');startSession(ids,'가이드라인 · 틀린 문제만','guide');}};
@@ -2592,12 +2593,16 @@ function ndxLines(){if(ndxLines.c)return ndxLines.c;const out=[];
                         ['NNT',String(Math.ceil(1/(C-E))),[String(Math.ceil(1/C)),String(Math.ceil(1/E)),String(Math.ceil(100/((C-E)/C*100)))]]];
     items.forEach(([nm,ans,w],j)=>{const ch=[ans];w.forEach(x=>{if(!ch.includes(x)&&ch.length<4)ch.push(x);});let z=1;while(ch.length<4){const v=ndxP(+ans+z,2);if(!ch.includes(v))ch.push(v);z++;}
       mk('xr'+ci+'.'+j,'계산 · 위험·효과 지표',pre+nm+' = ',ans,ch,nm==='NNT'?'NNT는 올림, NNH는 내림':'');});});
+  /* 유병률을 검사 전 확률로 두고 LR+로 검사 후 확률 (= PPV) — 2026-11-15 */
+  NDX_D.forEach((c,ci)=>{const {a,b,d}=c,cc=c.c,N=a+b+cc+d,se=a/(a+cc),sp=d/(b+d),p=(a+cc)/N,o=p/(1-p)*(se/(1-sp)),pp=o/(1+o)*100,ans=ndxP(pp,1)+'%';
+    const ch=[ans,ndxP(se*100,1)+'%',ndxP(p*100,1)+'%',ndxP(sp*100,1)+'%'].filter((v,i,a)=>a.indexOf(v)===i);let z=5;while(ch.length<4){ch.push(ndxP(pp+z,1)+'%');z+=5;}
+    mk('xq'+ci,'계산 · 진단검사 2×2',`${c.n} — TP ${a} · FP ${b} · FN ${cc} · TN ${d} · 검사 전 확률을 유병률로 둘 때 양성 결과의 검사 후 확률 = `,ans,ch,'');});
   /* 검사 후 확률 */
   [[20,6],[10,0.2],[40,4]].forEach(([p,lr],j)=>{const po=p/(100-p)*lr,pp=po/(1+po)*100,ans=ndxP(pp,1)+'%';
     const ch=[ans,ndxP(p*lr,1)+'%',ndxP(po*100,1)+'%',ndxP(p/(100-p)*100,1)+'%'].filter((v,i,a)=>a.indexOf(v)===i);let z=5;while(ch.length<4){ch.push(ndxP(pp+z,1)+'%');z+=5;}
     mk('xp'+j,'계산 · 검사 후 확률','검사 전 확률 '+p+'% · 우도비 '+lr+' → 검사 후 확률 = ',ans,ch,'');});
   return ndxLines.c=out;}
-function ndxItems(){return ndxLines().map(L=>({id:'biostat|'+L.k+'|0',t:'biostat',k:L.k,i:0,L,m:L.m[0],ans:L.t.slice(L.m[0].a),unit:'',x:1}));}
+function ndxItems(){return ndxLines().filter(L=>L.k[1]==='f').map(L=>({id:'biostat|'+L.k+'|0',t:'biostat',k:L.k,i:0,L,m:L.m[0],ans:L.t.slice(L.m[0].a),unit:'',x:1}));}
 
 /* ===== 토픽별 숫자 문제 (2026-11-11) =====
    - 문제풀이 세션 끝 / 토픽 정리 화면에서 그 토픽 정리본의 숫자·범위·투여간격 칸 전체를 객관식으로 (몰랐음 표시 여부와 무관)
@@ -2654,6 +2659,7 @@ function renderNum(){
       ${ne?`<button class="cta alt" id="ndEasyGo">쉬움 칸 모아 보기 <span class="n">${ne}</span></button>`:''}
       <label class="czinfo" style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="ndEasyInc" ${ndEasyInc()?'checked':''}> 토픽별 풀기에 쉬움 칸 포함</label></div>
       <div class="czinfo" style="margin-top:4px">「쉬움」 표시 칸은 매일 할당·토픽별 풀기·틀린 칸 모음에서 빠짐(삭제 아님) · 문제 화면의 「쉬움」 버튼으로 표시/해제</div></div>`;})()}
+  <div class="card" style="padding:12px 16px;margin-top:12px"><div class="todo-actions" style="align-items:center"><button class="cta alt" id="ndCalcGo">🧮 의학통계 계산 통문제 <span class="n">${calcLeft()||'완료 ✓'}</span></button><span class="czinfo" style="margin:0">계산 문항은 여기서 분리해 증례별 통문제로 풂 · 「의학통계」 토픽 칸에는 공식만 남음</span></div></div>
   <div class="eyebrow" style="margin:14px 0 8px">토픽별로 풀기 · 정리본 숫자·공식 칸 (한 번에 최대 ${ND_TOPIC_N}칸, 틀린 칸·안 푼 칸 먼저)</div>
   <div class="modegrid" id="ndTopicModes"></div>`;
   const tm=$('#ndTopicModes'),N=S.nd||{};
@@ -2667,6 +2673,7 @@ function renderNum(){
   if(!tm.children.length)tm.outerHTML='<div class="czinfo">숫자·공식 칸이 있는 토픽 없음</div>';
   if($('#ndEasyGo'))$('#ndEasyGo').onclick=()=>{const q=ndEasyItems();if(!q.length)return;ND={q,i:0,ok:0,redo:[],easyView:1};ndShow();};
   if($('#ndEasyInc'))$('#ndEasyInc').onchange=e=>{try{localStorage.setItem('idpc_ndeasy_inc',e.target.checked?'1':'0');}catch(x){}renderNum();};
+  if($('#ndCalcGo'))$('#ndCalcGo').onclick=()=>nav('calc');
   if($('#ndGo'))$('#ndGo').onclick=()=>ndStart(st.quota);
   if($('#ndMore'))$('#ndMore').onclick=()=>ndStart(st.due);
 }
@@ -2711,6 +2718,84 @@ function ndShow(){
     $('#ndStop').onclick=()=>{ND=null;nav('num');};
   });
 }
+/* ===== 의학통계 계산 통문제 (2026-11-15) =====
+   - 숫자·공식 드릴에서 계산 문항(xd·xl·xr·xp·xq)을 분리. 숫자·공식에는 공식 문항(xf)만 남음
+   - 한 증례를 한 화면에서 하위 문항 순서대로 풀이 · 하위 문항별 채점(S.nd 기록·id 유지 → 기존 풀이 기록 그대로 이어짐)
+   - 정답 확인 뒤 증례 숫자로 계산한 풀이 과정 표시 · 근거: NDX_SRC, 우도비 해석 구간은 Jaeschke R et al. JAMA 1994;271:703-7 */
+function ndxCalcItems(){return ndxLines().filter(L=>L.k[1]!=='f').map(L=>({id:'biostat|'+L.k+'|0',t:'biostat',k:L.k,i:0,L,m:L.m[0],ans:L.t.slice(L.m[0].a),unit:'',x:1}));}
+const CALC_BY_K=()=>{if(!CALC_BY_K.c)CALC_BY_K.c=Object.fromEntries(ndxCalcItems().map(it=>[it.k,it]));return CALC_BY_K.c;};
+function calcCases(){if(calcCases.c)return calcCases.c;const out=[];
+  NDX_D.forEach((c,ci)=>out.push({id:'d'+ci,kind:'diag',title:c.n+' (진단검사 2×2)',c,subs:['xd'+ci+'.5','xd'+ci+'.0','xd'+ci+'.1','xl'+ci+'.0','xl'+ci+'.1','xd'+ci+'.2','xd'+ci+'.3','xd'+ci+'.4','xq'+ci]}));
+  NDX_R.forEach((c,ci)=>out.push({id:'r'+ci,kind:c.harm?'harm':'benefit',title:c.n,c,subs:c.harm?['xr'+ci+'.0','xr'+ci+'.1','xr'+ci+'.2','xr'+ci+'.3']:['xr'+ci+'.0','xr'+ci+'.2','xr'+ci+'.1','xr'+ci+'.3']}));
+  out.push({id:'p',kind:'post',title:'검사 후 확률 (확률 → 오즈 → 확률)',subs:['xp0','xp1','xp2']});
+  return calcCases.c=out;}
+function calcSt(k){return (S.nd||{})['biostat|'+k+'|0']||{};}
+function calcLeftCase(cs){return cs.subs.filter(k=>{const s=calcSt(k);return !s.n||s.last==='w';}).length;}
+function calcLeft(){return calcCases().reduce((a,cs)=>a+calcLeftCase(cs),0);}
+const f1=x=>ndxP(x,1), f2=x=>ndxP(x,2), f3=x=>ndxP(x,3), pc=x=>ndxP(x*100,1)+'%';
+function calcQ(k){const it=CALC_BY_K()[k];const t=it.L.t,pre=t.lastIndexOf(' — ');const body=pre>=0?t.slice(pre+3):t;
+  const parts=body.split(' · ');const q=parts[parts.length-1];return q.slice(0,q.lastIndexOf('=')+1)+' ?';}
+function calcWhy(cs,k){const L=[];
+  if(cs.kind==='diag'){const {a,b,d}=cs.c,c=cs.c.c,N=a+b+c+d,D=a+c,ND=b+d,se=a/D,sp=d/ND,lp=se/(1-sp),ln=(1-se)/sp;
+    const j=k[1]==='d'?+k.split('.')[1]:null;
+    if(k[1]==='q'){const p=D/N,o=p/(1-p),po=o*lp;L.push('검사 전 확률 = 유병률 = '+D+'/'+N+' = '+pc(p),'검사 전 오즈 = '+f3(p)+' / (1 − '+f3(p)+') = '+f3(o),'검사 후 오즈 = 검사 전 오즈 × LR+ = '+f3(o)+' × '+f2(lp)+' = '+f3(po),'검사 후 확률 = 오즈 / (1 + 오즈) = '+f3(po)+' / '+f3(1+po)+' = '+pc(po/(1+po)),'확인: PPV = a/(a+b) = '+a+'/'+(a+b)+' = '+pc(a/(a+b)) +' — 검사 전 확률을 그 집단의 유병률로 두면 검사 후 확률(양성)은 PPV와 같음');}
+    else if(k[1]==='l'){if(k.endsWith('.0'))L.push('민감도 = '+a+'/'+D+' = '+f3(se)+', 특이도 = '+d+'/'+ND+' = '+f3(sp),'LR+ = 민감도 / (1 − 특이도) = '+f3(se)+' / '+f3(1-sp)+' = '+f2(lp),'뜻: 양성 결과가 질환 오즈를 '+f2(lp)+'배로 만듦');
+      else L.push('LR− = (1 − 민감도) / 특이도 = '+f3(1-se)+' / '+f3(sp)+' = '+f2(ln),'뜻: 음성 결과가 질환 오즈를 '+f2(ln)+'배(약 '+Math.round(ln*100)+'%)로 줄임');}
+    else{const S0=['민감도 = TP / 질환자(TP+FN) = '+a+'/'+D+' = '+pc(se),'특이도 = TN / 비질환자(FP+TN) = '+d+'/'+ND+' = '+pc(sp),'PPV = TP / 검사 양성(TP+FP) = '+a+'/'+(a+b)+' = '+pc(a/(a+b)),'NPV = TN / 검사 음성(FN+TN) = '+d+'/'+(c+d)+' = '+pc(d/(c+d)),'정확도 = (TP+TN) / 전체 = '+(a+d)+'/'+N+' = '+pc((a+d)/N),'유병률 = 질환자(TP+FN) / 전체 = '+D+'/'+N+' = '+pc(D/N)];L.push(S0[j]);
+      if(j===0||j===1)L.push('민감도·특이도는 "세로(질환 유무)"로 나눔 → 유병률이 바뀌어도 변하지 않음');
+      if(j===2||j===3)L.push('PPV·NPV는 "가로(검사 결과)"로 나눔 → 유병률에 따라 변함');}}
+  else if(cs.kind==='benefit'||cs.kind==='harm'){const c=cs.c,E=c.te/c.tn,C=c.ce/c.cn,n=+k.split('.')[1];
+    L.push('치료/노출군 사건률 = '+c.te+'/'+c.tn+' = '+f3(E)+', 대조/비노출군 사건률 = '+c.ce+'/'+c.cn+' = '+f3(C));
+    if(cs.kind==='benefit'){[()=>L.push('RR = EER / CER = '+f3(E)+' / '+f3(C)+' = '+f2(E/C)),()=>L.push('RRR = (CER − EER) / CER = '+f3(C-E)+' / '+f3(C)+' = '+f1((C-E)/C*100)+'% (= 1 − RR)'),()=>L.push('ARR = CER − EER = '+f3(C)+' − '+f3(E)+' = '+f3(C-E)+' = '+f1((C-E)*100)+'%p','RRR은 대조군 대비 비율, ARR은 단순 차이'),()=>L.push('NNT = 1 / ARR = 1 / '+f3(C-E)+' = '+f1(1/(C-E))+' → 올림 '+Math.ceil(1/(C-E)))][n]();}
+    else{const odds=(c.te*(c.cn-c.ce))/((c.tn-c.te)*c.ce);[()=>L.push('RR = 노출군 / 비노출군 = '+f3(E)+' / '+f3(C)+' = '+f2(E/C)),()=>L.push('ARI = 노출군 − 비노출군 = '+f3(E)+' − '+f3(C)+' = '+f3(E-C)+' = '+f2((E-C)*100)+'%p'),()=>L.push('NNH = 1 / ARI = 1 / '+f3(E-C)+' = '+f1(1/(E-C))),()=>L.push('2×2: a(노출·사건) '+c.te+', b(노출·무사건) '+(c.tn-c.te)+', c(비노출·사건) '+c.ce+', d(비노출·무사건) '+(c.cn-c.ce),'OR = (a×d)/(b×c) = ('+c.te+'×'+(c.cn-c.ce)+') / ('+(c.tn-c.te)+'×'+c.ce+') = '+f2(odds),'함정: b·d에는 전체 인원이 아니라 "사건 없는 인원"을 넣음. 사건이 드물면 OR ≈ RR')][n]();}}
+  else{const P=[[20,6],[10,0.2],[40,4]][+k.slice(2)],p=P[0]/100,o=p/(1-p),po=o*P[1];
+    L.push('검사 전 오즈 = '+f2(p)+' / '+f2(1-p)+' = '+f3(o),'검사 후 오즈 = '+f3(o)+' × LR '+P[1]+' = '+f3(po),'검사 후 확률 = '+f3(po)+' / (1 + '+f3(po)+') = '+pc(po/(1+po)),'함정: 확률에 LR을 바로 곱한 값('+f1(P[0]*P[1])+'%)은 오답 — LR은 오즈에 곱함');}
+  return L;}
+const CALC_CONCEPT={
+ diag:`<b>진단검사 2×2 읽는 법</b><ul><li>세로 = 실제 질환 유무: 질환자 = TP+FN, 비질환자 = FP+TN → <b>민감도·특이도</b>(검사 자체의 성질, 유병률과 무관)</li><li>가로 = 검사 결과: 양성 = TP+FP, 음성 = FN+TN → <b>PPV·NPV</b>(유병률에 따라 변함)</li><li><b>우도비(LR)</b> = 그 검사 결과가 질환자에게서 나올 확률 ÷ 비질환자에게서 나올 확률. LR+ = 민감도/(1−특이도) · LR− = (1−민감도)/특이도. 민감도·특이도로 정해지므로 유병률과 무관</li><li>해석: LR 1 = 정보 없음 · LR+ &gt;10 또는 LR− &lt;0.1 = 큰 변화 · 5~10 / 0.1~0.2 = 중등도 · 2~5 / 0.2~0.5 = 작은 변화 (Jaeschke R, et al. JAMA 1994;271:703-7)</li><li>유병률(검사 전 확률)에서 LR+로 계산한 검사 후 확률 = PPV</li></ul>`,
+ benefit:`<b>이로운 효과 지표</b><ul><li>EER = 치료군 사건률, CER = 대조군 사건률 — 먼저 두 사건률부터 구함</li><li>RR = EER/CER · RRR = (CER−EER)/CER = 1−RR · ARR = CER−EER · NNT = 1/ARR (올림)</li><li>RRR은 대조군 위험이 작아도 크게 보일 수 있음 → 임상적 크기는 ARR·NNT로 판단</li></ul>`,
+ harm:`<b>해로운 효과 지표</b><ul><li>ARI = 노출군 사건률 − 비노출군 사건률 · NNH = 1/ARI</li><li>OR = (a×d)/(b×c) — a·b = 노출군 사건·무사건, c·d = 비노출군 사건·무사건. 환자-대조군 연구는 RR을 구할 수 없어 OR을 씀</li><li>사건이 드물면 OR ≈ RR, 흔하면 OR이 RR보다 1에서 더 멀어짐</li></ul>`,
+ post:`<b>검사 전 확률과 우도비의 관계 (베이즈 정리)</b><ul><li>검사 전 확률 = 검사 전에 이 환자가 질환을 가질 가능성(유병률·증상·위험인자) — 환자마다 다름</li><li>우도비 = 검사 결과가 그 가능성을 몇 배로 바꾸는지 — 검사의 성질, 환자와 무관</li><li>순서: 확률 → 오즈 = p/(1−p) → × LR → 확률 = 오즈/(1+오즈). LR은 오즈에 곱하도록 정의된 값이라 확률에 바로 곱하지 않음</li><li>같은 LR+ 8이라도 검사 전 2% → 검사 후 약 14%, 검사 전 50% → 약 89% (유병률 낮은 집단에서 PPV가 낮은 이유)</li><li>유병률이 바뀔 때 변하지 않는 값: 민감도·특이도·우도비 / 변하는 값: PPV·NPV·검사 후 확률</li></ul>`};
+let CALC=null;
+function calcTable(cs){if(cs.kind==='diag'){const {a,b,d}=cs.c,c=cs.c.c;return `<table style="border-collapse:collapse;margin:8px 0;font-size:15px">${[['','질환 있음','질환 없음','합계'],['검사 양성','TP '+a,'FP '+b,a+b],['검사 음성','FN '+c,'TN '+d,c+d],['합계',a+c,b+d,a+b+c+d]].map((r,i)=>`<tr>${r.map((x,j)=>`<td style="border:1px solid var(--line);padding:4px 10px;${i===0||j===0?'font-weight:600':''}">${x}</td>`).join('')}</tr>`).join('')}</table>`;}
+  if(cs.kind==='post')return '<div class="czinfo">하위 문항마다 검사 전 확률·우도비가 주어짐</div>';
+  const c=cs.c;return `<table style="border-collapse:collapse;margin:8px 0;font-size:15px">${[['','사건','대상'],[cs.kind==='harm'?'노출군':'치료군',c.te,c.tn],[cs.kind==='harm'?'비노출군':'대조군',c.ce,c.cn]].map((r,i)=>`<tr>${r.map((x,j)=>`<td style="border:1px solid var(--line);padding:4px 10px;${i===0||j===0?'font-weight:600':''}">${x}</td>`).join('')}</tr>`).join('')}</table>`;}
+function renderCalc(){const C=calcCases(),left=calcLeft();
+  app().innerHTML=`<div class="card" style="padding:20px 22px"><h2 style="margin:0 0 6px;font-size:20px">🧮 의학통계 계산 통문제</h2>
+    <div class="czinfo">증례 하나를 한 화면에서 순서대로 풀이 · 하위 문항별 채점 · 정답 뒤 풀이 과정 표시 · 공식 암기 문항은 「숫자·공식 → 의학통계」에 따로 있음</div>
+    <div class="todo-actions" style="margin-top:12px">${left?`<button class="cta" id="calcGo">안 푼·틀린 문항 이어서 <span class="n">${left}</span></button>`:'<div class="czinfo">안 푼·틀린 문항 없음 ✓</div>'}</div></div>
+    <div class="modegrid" id="calcModes" style="margin-top:12px"></div>
+    <details class="card" style="padding:12px 16px;margin-top:12px"><summary style="cursor:pointer;font-weight:600">개념 정리 (2×2 · 효과 지표 · 검사 전 확률과 우도비)</summary><div style="margin-top:8px;line-height:1.7">${CALC_CONCEPT.diag}${CALC_CONCEPT.benefit}${CALC_CONCEPT.harm}${CALC_CONCEPT.post}<div class="czinfo">근거 · ${esc(NDX_SRC)}</div></div></details>`;
+  const m=$('#calcModes');C.forEach((cs,ci)=>{const l=calcLeftCase(cs),done=cs.subs.filter(k=>calcSt(k).n).length,wr=cs.subs.filter(k=>calcSt(k).last==='w').length;
+    const b=document.createElement('button');b.className='mode alt';b.innerHTML=`<span class="ic" style="background:var(--teal-d)">∑</span><span><span class="t">${esc(cs.title)}</span><br><span class="s">${cs.subs.length}문항${wr?' · 틀린 '+wr:''}</span></span><span class="cnt">${l?done+'/'+cs.subs.length:'✓'}</span>`;
+    b.onclick=()=>calcStart(ci);m.appendChild(b);});
+  if($('#calcGo'))$('#calcGo').onclick=()=>{const ci=C.findIndex(cs=>calcLeftCase(cs)>0);calcStart(ci<0?0:ci,true);};}
+function calcStart(ci,chain){CALC={ci,i:0,res:[],chain:!!chain};VIEW='calc';calcShow();}
+function calcShow(){if(!CALC)return renderCalc();const C=calcCases(),cs=C[CALC.ci];
+  if(CALC.i>=cs.subs.length){const ok=CALC.res.filter(r=>r.good).length;const nx=C.findIndex((x,j)=>j>CALC.ci&&calcLeftCase(x)>0);
+    app().innerHTML=`<div class="card" style="padding:20px 22px"><h2 style="margin:0 0 8px;font-size:20px">${esc(cs.title)} 끝</h2><div class="czinfo">정답 ${ok} / ${cs.subs.length}${ok<cs.subs.length?' · 틀린 문항은 목록에 「틀린」으로 남아 다시 풀 수 있음':''}</div>
+      <div style="margin-top:10px;line-height:1.7">${CALC_CONCEPT[cs.kind]}</div>
+      <div class="todo-actions" style="margin-top:12px">${nx>=0?`<button class="cta" id="calcNx">다음 증례 · ${esc(C[nx].title)}</button>`:''}${ok<cs.subs.length?`<button class="cta alt" id="calcRe">이 증례 다시</button>`:''}<button class="cta alt" id="calcList">계산 통문제 목록</button><button class="cta alt" id="calcHome">홈</button></div></div>`;
+    if($('#calcNx'))$('#calcNx').onclick=()=>calcStart(nx,CALC.chain);if($('#calcRe'))$('#calcRe').onclick=()=>calcStart(CALC.ci,false);
+    $('#calcList').onclick=()=>{CALC=null;renderCalc();};$('#calcHome').onclick=()=>nav('home');return;}
+  const k=cs.subs[CALC.i],it=CALC_BY_K()[k],ch=ndChoices(it),s=calcSt(k);
+  const prev=CALC.res.map(r=>`<div class="czinfo">${r.good?'✓':'✗'} ${esc(r.q.replace(' ?',''))} ${esc(r.ans)}</div>`).join('');
+  const qtxt=cs.kind==='post'?it.L.t.slice(0,it.L.m[0].a)+'?':calcQ(k);
+  app().innerHTML=`<div class="card" style="padding:20px 22px"><div class="czinfo">${CALC.ci+1}/${C.length} 증례 · 하위 문항 ${CALC.i+1}/${cs.subs.length}${s.n?' · 이전 기록 '+(s.ok||0)+'/'+s.n+' 정답':''}</div>
+    <div class="czh" style="margin-top:6px">${esc(cs.title)}</div>${calcTable(cs)}${prev}
+    <div class="czt" style="font-size:17px;line-height:1.7;margin:10px 0 12px"><b>${esc(qtxt)}</b></div>
+    <div class="todo-actions" id="calcCh" style="flex-direction:column;align-items:stretch">${ch.map((v,j)=>`<button class="cta alt" data-j="${j}" style="text-align:left">${KO[j+1]}. ${esc(v)}</button>`).join('')}</div><div id="calcFb"></div></div>`;
+  window.scrollTo(0,0);
+  app().querySelectorAll('#calcCh button').forEach(b=>b.onclick=()=>{if(b.dataset.done)return;app().querySelectorAll('#calcCh button').forEach(x=>x.dataset.done='1');
+    const v=ch[+b.dataset.j],good=v===it.ans;
+    app().querySelectorAll('#calcCh button').forEach(x=>{const vv=ch[+x.dataset.j];if(vv===it.ans){x.style.background='var(--teal)';x.style.color='#fff';}else if(x===b){x.style.background='var(--kr)';x.style.color='#fff';}});
+    ndRecord(it,good);CALC.res.push({good,q:qtxt,ans:it.ans});
+    $('#calcFb').innerHTML=`<div class="czinfo" style="margin-top:12px;font-weight:600">${good?'정답':'오답 — 정답 '+esc(it.ans)}</div>
+      <div class="card" style="padding:12px 14px;margin-top:8px"><b>풀이</b><ol style="margin:6px 0 0;padding-left:20px;line-height:1.7">${calcWhy(cs,k).map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>
+      <div class="czinfo" style="margin-top:6px">근거 · ${esc(NDX_SRC)} (증례 숫자로 허브가 계산)</div>
+      <div class="todo-actions" style="margin-top:12px"><button class="cta" id="calcNext">다음</button><button class="cta alt" id="calcStop">그만</button></div>`;
+    $('#calcNext').onclick=()=>{CALC.i++;calcShow();};$('#calcStop').onclick=()=>{CALC=null;renderCalc();};});}
+
 function ndRecord(it,good){const s=ndState(it.id),td=today();
   if(!good){if(it.x||it.L.x)s.mx=1;else{try{czStore(it.t).miss[it.k]=true;}catch(e){}}} /* 틀린 칸의 줄 → 「몰랐음」 (매일 숫자 드릴 풀로) */
   if(s.g){delete s.g;delete s.gl;s.st=0;} /* 졸업 뒤 다시 나온 칸은 새로 시작 */
