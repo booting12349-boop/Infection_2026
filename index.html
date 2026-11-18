@@ -597,7 +597,7 @@ async function load(){
 const WRONG_EXIT=5; // 틀린 뒤 이만큼 맞히면 오답노트에서 빠짐
 function inWrong(s){return !!(s&&s.wl===1);}
 let saveT=null;
-function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{try{S.ndStat=ndStats();S.ndNeed=ndNeed();}catch(e){}try{S.prog=Object.fromEntries(TOPICS.map(t=>{const p=topicProg(t.id);return [t.id,{qd:p.qd,qn:p.qn,cd:p.cd,cn:p.cn,acc:p.acc,full:p.full}];}));}catch(e){}if(SYNC.on&&!SYNC.applying)S._ts=Date.now();try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}if(SYNC.on&&!SYNC.applying)SYNC.push();},150);}
+function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{try{S.ndStat=ndStats();S.ndStat.day=today();S.ndStat.ids=ndPool().filter(ndActive).map(it=>it.id);S.ndNeed=ndNeed();}catch(e){} /* 2026-11-18: 진도 계획기가 드릴 대상 칸으로 다음 날 목표를 같은 규칙으로 다시 계산 */try{S.prog=Object.fromEntries(TOPICS.map(t=>{const p=topicProg(t.id);return [t.id,{qd:p.qd,qn:p.qn,cd:p.cd,cn:p.cn,acc:p.acc,full:p.full}];}));}catch(e){}if(SYNC.on&&!SYNC.applying)S._ts=Date.now();try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}if(SYNC.on&&!SYNC.applying)SYNC.push();},150);}
 
 const $=s=>document.querySelector(s);
 const app=()=>$('#app');
@@ -2514,11 +2514,34 @@ function ndEasyItems(){const seen=new Set(),out=[];
   return out.sort((a,b)=>((S.nd[a.id]||{}).lastTs||0)-((S.nd[b.id]||{}).lastTs||0));}
 function ndToggleEasy(it){const s=ndState(it.id);if(s.e)delete s.e;else s.e=Date.now();save();return !!s.e;}
 function ndActive(it){const s=(S.nd||{})[it.id];if(s&&s.e)return false;return !(s&&s.g)||!!s.gl; /* gl: 줄 전체 졸업 뒤 다시 「몰랐음」이 된 칸 → 다시 대상 */}
-function ndStats(){const P=ndPool(),td=today();const act=P.filter(ndActive);
-  const doneToday=act.filter(it=>{const s=(S.nd||{})[it.id];return s&&s.lastDay===td;}).length;
+/* 2026-11-18 간격 반복: 틀린 칸 → 다음 날, 정답 1일째 → 2일 뒤, 정답 2일째 → 4일 뒤 (졸업 기준 ND_GRAD일은 그대로).
+   새 칸(드릴에서 처음 푸는 칸)은 ND_NEW_END까지 나눠서 하루 몫만 배정. 오늘 목표 = 오늘 복습할 칸 + 오늘 새 칸 몫.
+   진도 계획기는 S.ndStat.target을 그날 숫자 드릴 분량으로 쓴다. 기존 기록(S.nd)은 형식 그대로 사용. */
+const ND_NEW_END='2026-12-10', ND_REV_END='2026-12-17';
+function ndDayN(s){const p=String(s||'').split('-').map(Number);return p.length===3?Date.UTC(p[0],p[1]-1,p[2])/864e5:0;}
+function ndGapNeed(s){return s.last==='w'?1:((s.st||0)>=2?4:2);}
+function ndSplit(){const td=today(),N=S.nd||{},act=ndPool().filter(ndActive);
+  const o={act,td,done:[],dueW:[],dueC:[],wait:[],fresh:[],newToday:0};
+  act.forEach(it=>{const s=N[it.id];
+    if(!s||!s.n){o.fresh.push(it);return;}
+    if(s.lastDay===td){o.done.push(it);if((s.days||[])[0]&&String(s.days[0]).split(':')[0]===td)o.newToday++;return;}
+    if(ndDayN(td)-ndDayN(s.lastDay)>=ndGapNeed(s))(s.last==='w'?o.dueW:o.dueC).push(it);else o.wait.push(it);});
+  const byTs=(a,b)=>((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0);
+  o.dueW.sort(byTs);o.dueC.sort(byTs);o.wait.sort(byTs);
+  const days=Math.max(1,ndDayN(ND_NEW_END)-ndDayN(td)+1), late=ndDayN(td)>ndDayN(ND_NEW_END);
+  const newQ=late?o.fresh.length+o.newToday:Math.ceil((o.fresh.length+o.newToday)/days);
+  o.newRemain=Math.max(0,Math.min(o.fresh.length,newQ-o.newToday));
+  /* 복습 하루 상한: 졸업까지 남은 정답 일수 합 × 1.25(오답 여유) ÷ 12/17까지 남은 날 (최소 20). 밀린 복습이 하루에 몰리지 않게 나눔 — 틀린 칸이 먼저 */
+  let rem=0;o.act.forEach(it=>{const s=N[it.id];if(s&&s.n)rem+=Math.max(1,ND_GRAD-(s.st||0));});
+  const rdays=Math.max(1,ndDayN(ND_REV_END)-ndDayN(td)+1);
+  o.revCap=Math.max(20,Math.ceil(rem*1.25/rdays));
+  o.revRemain=Math.max(0,Math.min(o.dueW.length+o.dueC.length,o.revCap-(o.done.length-o.newToday)));
+  return o;}
+function ndStats(){const o=ndSplit();
   const grad=Object.values(S.nd||{}).filter(s=>s&&s.g).length; /* 누적 졸업 칸 */
-  const due=act.filter(it=>{const s=(S.nd||{})[it.id];return !(s&&s.lastDay===td);}).length;
-  return {pool:act.length,due,doneToday,grad,quota:Math.max(0,Math.min(ND_DAILY-doneToday,due))};}
+  const quota=o.revRemain+o.newRemain;
+  return {pool:o.act.length,due:o.act.length-o.done.length,doneToday:o.done.length,grad,quota,target:quota+o.done.length,
+    review:o.revRemain,backlog:o.dueW.length+o.dueC.length,revCap:o.revCap,fresh:o.fresh.length,wait:o.wait.length};}
 /* 아침 자동 작업이 연상을 만들 줄 목록 (연상 없는 줄, 최근 틀린 줄 우선, 최대 40줄) — 시트 동기화로 전달됨 */
 function ndNeed(){const seen=new Set(),out=[];
   const P=ndPool().filter(ndActive).sort((a,b)=>{const x=(S.nd||{})[a.id]||{},y=(S.nd||{})[b.id]||{};return (x.last==='w'?0:x.n?2:1)-(y.last==='w'?0:y.n?2:1)||(y.lastTs||0)-(x.lastTs||0);});
@@ -2546,11 +2569,9 @@ function ndChoices(it){
   const all=[it.ans,...pick];
   return all.map((v,j)=>({v,o:((j+1)*(s2+13))%101})).sort((a,b)=>a.o-b.o).map(x=>x.v);
 }
-function ndQueue(){const td=today();
-  const act=ndPool().filter(ndActive).filter(it=>{const s=(S.nd||{})[it.id];return !(s&&s.lastDay===td);});
-  const pr=it=>{const s=(S.nd||{})[it.id];if(!s||!s.n)return 1;return s.last==='w'?0:2;};
-  act.sort((a,b)=>pr(a)-pr(b)||(((S.nd||{})[a.id]||{}).lastTs||0)-(((S.nd||{})[b.id]||{}).lastTs||0));
-  return act;}
+function ndQueue(){const o=ndSplit();
+  const rev=o.dueW.concat(o.dueC);
+  return rev.slice(0,o.revRemain).concat(o.fresh.slice(0,o.newRemain),rev.slice(o.revRemain),o.wait,o.fresh.slice(o.newRemain));}
 /* ===== 의학통계 공식·계산 문항 (2026-11-11) =====
    의학통계 정리본은 개념 위주라 '숫자 칸'이 거의 없어, 공식(변수 도출식)과 2×2 계산 문항을 따로 둔다.
    - 공식: 표준 정의식 (근거: DiCenzo R, ed. Clinical Pharmacist's Guide to Biostatistics and Literature Evaluation, 2nd ed. ACCP 2015 · Guyatt G, et al. Users' Guides to the Medical Literature, 3rd ed. 2015)
@@ -2625,7 +2646,7 @@ function ndTopicPool(key){const [t,fk]=String(key).split('~'),F=fk?ND_FILT[fk]:n
   return ndCoreF(out);}
 function ndTopicQueue(t){const N=S.nd||{};
   const pr=it=>{const s=N[it.id];if(!s||!s.n)return 1;return s.last==='w'?0:2;};
-  const inc=ndEasyInc();return ndTopicPool(t).filter(it=>!(N[it.id]&&N[it.id].g&&!N[it.id].gl)&&(inc||!(N[it.id]&&N[it.id].e))).sort((a,b)=>pr(a)-pr(b)||((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0));}
+  const inc=ndEasyInc();const td=today();return ndTopicPool(t).filter(it=>!(N[it.id]&&N[it.id].g&&!N[it.id].gl)&&!(N[it.id]&&N[it.id].lastDay===td)&&(inc||!(N[it.id]&&N[it.id].e))).sort((a,b)=>pr(a)-pr(b)||((N[a.id]||{}).lastTs||0)-((N[b.id]||{}).lastTs||0));}
 function ndTopicProg(t){const N=S.nd||{},inc=ndEasyInc(),A=ndTopicPool(t),P=A.filter(it=>inc||!(N[it.id]&&N[it.id].e));let done=0,wrong=0;P.forEach(it=>{const x=N[it.id];if(x&&x.n){done++;if(x.last==='w'&&!(x.g&&!x.gl))wrong++;}});
   const left=P.length-done;return {n:P.length,done,left,wrong,sets:Math.ceil((left+wrong)/ND_TOPIC_N),easy:A.length-A.filter(it=>!(N[it.id]&&N[it.id].e)).length};}
 function ndProgTxt(t){const p=ndTopicProg(t);if(!p.n)return '';
@@ -2653,9 +2674,9 @@ function renderNum(){
   const st=ndStats();
   app().innerHTML=`<div class="card" style="padding:20px 22px">
     <h2 style="margin:0 0 6px;font-size:20px">🔢 숫자·공식 드릴</h2>
-    <div class="czinfo">빈칸 노트에서 「몰랐음」 표시한 줄 중 숫자·범위·투여간격 칸만 객관식으로 · 보기는 같은 토픽 정리본의 같은 단위 실제 수치 · 서로 다른 ${ND_GRAD}일 연속 정답이면 졸업(그 줄 「몰랐음」 자동 해제)</div>
+    <div class="czinfo">빈칸 노트에서 「몰랐음」 표시한 줄 중 숫자·범위·투여간격 칸만 객관식으로 · 보기는 같은 토픽 정리본의 같은 단위 실제 수치 · 서로 다른 ${ND_GRAD}일 연속 정답이면 졸업(그 줄 「몰랐음」 자동 해제) · 다시 나오는 간격: 틀림 다음 날, 맞힘 2일 뒤 → 4일 뒤 · 틀린 칸은 세트 안에서 몇 칸 뒤 한 번 더 나옴(기록 안 됨)</div>
     <div class="hsplit" style="margin-top:12px">
-      <div class="card metric"><div class="lab">오늘 남은 할당</div><div class="big">${st.quota}<small> / 하루 ${ND_DAILY}문 · 오늘 ${st.doneToday}문 풂</small></div></div>
+      <div class="card metric"><div class="lab">오늘 남은 할당</div><div class="big">${st.quota}<small> / 오늘 목표 ${st.target}칸 · 오늘 ${st.doneToday}칸 풂</small></div><div class="czinfo" style="margin-top:4px">복습 ${st.review} · 새 칸 ${Math.max(0,st.quota-st.review)} (새 칸은 12/10까지 나눠 배정) · 복습 밀림 ${Math.max(0,st.backlog-st.review)} · 간격 대기 ${st.wait}</div></div>
       <div class="card metric"><div class="lab">대상 칸</div><div class="big">${st.pool}<small> · 졸업 ${st.grad}</small></div></div>
     </div>
     <div class="todo-actions" style="margin-top:14px">
@@ -2667,6 +2688,7 @@ function renderNum(){
       ${ne?`<button class="cta alt" id="ndEasyGo">쉬움 칸 모아 보기 <span class="n">${ne}</span></button>`:''}
       <label class="czinfo" style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="ndEasyInc" ${ndEasyInc()?'checked':''}> 토픽별 풀기에 쉬움 칸 포함</label><label class="czinfo" style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="ndOptInc" ${ndOptInc()?'checked':''}> 선택 칸 포함</label></div>
       <div class="czinfo" style="margin-top:4px">「쉬움」 표시 칸은 매일 할당·토픽별 풀기·틀린 칸 모음에서 빠짐(삭제 아님) · 문제 화면의 「쉬움」 버튼으로 표시/해제<br>「선택 칸」: ACCP·기출 문항과 연계되지 않거나 다른 칸과 내용이 겹치는 칸. 기본 제외(기록 유지) · 지금 틀린 상태인 칸은 계속 포함</div></div>`;})()}
+  ${(()=>{let n=0;try{n=ndNoteItems().length;}catch(e){}return n?`<div class="card" style="padding:12px 16px;margin-top:12px"><div class="todo-actions" style="align-items:center"><button class="cta alt" id="ndNoteGo">✍️ 손필기 대상 <span class="n">${n}</span></button><span class="czinfo" style="margin:0">서로 다른 2일 이상 틀린 칸 · 정답과 헷갈린 보기 대조표로 손필기</span></div></div>`:'';})()}
   <div class="card" style="padding:12px 16px;margin-top:12px"><div class="todo-actions" style="align-items:center"><button class="cta alt" id="ndCalcGo">🧮 의학통계 계산 통문제 <span class="n">${calcLeft()||'완료 ✓'}</span></button><span class="czinfo" style="margin:0">계산 문항은 여기서 분리해 증례별 통문제로 풂 · 「의학통계」 토픽 칸에는 공식만 남음</span></div></div>
   <div class="eyebrow" style="margin:14px 0 8px">토픽별로 풀기 · 정리본 숫자·공식 칸 (한 번에 최대 ${ND_TOPIC_N}칸, 틀린 칸·안 푼 칸 먼저)</div>
   <div class="modegrid" id="ndTopicModes"></div>`;
@@ -2683,9 +2705,27 @@ function renderNum(){
   if($('#ndOptInc'))$('#ndOptInc').onchange=e=>{try{localStorage.setItem('idpc_ndopt_inc',e.target.checked?'1':'0');}catch(x){}renderNum();};
   if($('#ndEasyInc'))$('#ndEasyInc').onchange=e=>{try{localStorage.setItem('idpc_ndeasy_inc',e.target.checked?'1':'0');}catch(x){}renderNum();};
   if($('#ndCalcGo'))$('#ndCalcGo').onclick=()=>nav('calc');
+  if($('#ndNoteGo'))$('#ndNoteGo').onclick=()=>renderNdNote();
   if($('#ndGo'))$('#ndGo').onclick=()=>ndStart(st.quota);
   if($('#ndMore'))$('#ndMore').onclick=()=>ndStart(st.due);
 }
+/* 2026-11-18 손필기 대상: 숫자·공식 칸 중 서로 다른 2일 이상 틀렸고 졸업 전인 칸. 같은 줄 정답과 헷갈린 보기(같은 단위 실제 수치)를 함께 보여 대조표로 손필기 */
+function ndNoteItems(){const N=S.nd||{},seen=new Set(),out=[];
+  Object.keys(DIG_BY_TOPIC).forEach(t=>{let P=[];try{P=ndTopicPool(t);}catch(e){}
+    P.forEach(it=>{const s=N[it.id];if(!s||seen.has(it.id))return;if(s.g&&!s.gl)return;
+      const w=(s.days||[]).filter(x=>String(x).endsWith(':w')).length;if(w>=2){seen.add(it.id);out.push(Object.assign({},it,{_w:w}));}});});
+  return out.sort((a,b)=>b._w-a._w||String(a.t).localeCompare(String(b.t)));}
+function renderNdNote(){const L=ndNoteItems();
+  const by={};L.forEach(it=>{(by[it.t]=by[it.t]||[]).push(it);});
+  app().innerHTML=`<div class="card" style="padding:20px 22px"><h2 style="margin:0 0 6px;font-size:20px">✍️ 손필기 대상 · ${L.length}칸</h2>
+    <div class="czinfo">서로 다른 2일 이상 틀린 칸(졸업 전) · 정답과 헷갈린 보기를 나란히 적어 대조표로 정리 · 졸업하면 목록에서 빠짐</div>
+    ${Object.keys(by).map(t=>`<div class="eyebrow" style="margin:16px 0 6px">${esc((TOPIC_BY[t]||{}).name||ndKeyName(t))} · ${by[t].length}칸</div>`+by[t].map(it=>{
+      let ch=[];try{ch=ndChoices(it).filter(v=>!(it.L.x?v===it.ans:czOk(v,it.ans,it.L.t)));}catch(e){}
+      return `<div class="card" style="padding:10px 14px;margin-top:6px"><div class="czh">${esc(it.L.h)}</div><div class="czt" style="margin:4px 0">${esc(it.L.t.slice(0,it.m.a))}<b style="color:var(--kr)">${esc(it.ans)}</b>${esc(it.L.t.slice(it.m.b))}</div><div class="czinfo">틀린 날 ${it._w}일 · 헷갈린 보기: ${ch.map(esc).join(' / ')||'—'}</div></div>`;}).join('')).join('')||'<div class="czinfo" style="margin-top:10px">대상 칸 없음</div>'}
+    <div class="todo-actions" style="margin-top:14px">${L.length?`<button class="cta" id="nnGo">이 칸들 다시 풀기 <span class="n">${Math.min(ND_TOPIC_N,L.length)}</span></button>`:''}<button class="cta alt" id="nnBack">숫자 드릴로</button></div></div>`;
+  window.scrollTo(0,0);
+  if($('#nnGo'))$('#nnGo').onclick=()=>{const q=ndNoteItems().slice(0,ND_TOPIC_N);ND={q,i:0,ok:0,redo:[]};ndShow();};
+  $('#nnBack').onclick=()=>renderNum();}
 function ndStart(n){const q=ndQueue().slice(0,n);if(!q.length){renderNum();return;}ND={q,i:0,ok:0,redo:[]};ndShow();}
 function ndShow(){
   if(!ND)return renderNum();
@@ -2704,7 +2744,7 @@ function ndShow(){
   html+=esc(L.t.slice(pos));
   const ch=ndChoices(it);
   app().innerHTML=`<div class="card" style="padding:20px 22px">
-    <div class="czinfo" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1">${ND.easyView?'쉬움 칸 모아 보기 · ':''}${ND.again?'다시 풀기 · ':''}${ND.i+1} / ${ND.q.length} · ${esc(tn)} · 연속 ${s.st||0}/${ND_GRAD}일${ND.topic?' · '+ndProgTxt(ND.topic):''}</span><button class="flag easybtn ${s.e?'on':''}" id="ndEasyBtn" title="매일 할당·토픽별 풀기에서 빼고 「쉬움 칸 모아 보기」로만 봄">${s.e?'쉬움 · 제외됨':'쉬움 · 제외'}</button></div>
+    <div class="czinfo" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1">${ND.easyView?'쉬움 칸 모아 보기 · ':''}${ND.again||it._re?'다시 풀기(기록 안 됨) · ':''}${ND.i+1} / ${ND.q.length} · ${esc(tn)} · 연속 ${s.st||0}/${ND_GRAD}일${ND.topic?' · '+ndProgTxt(ND.topic):''}</span><button class="flag easybtn ${s.e?'on':''}" id="ndEasyBtn" title="매일 할당·토픽별 풀기에서 빼고 「쉬움 칸 모아 보기」로만 봄">${s.e?'쉬움 · 제외됨':'쉬움 · 제외'}</button></div>
     <div class="czh" style="margin-top:8px">${esc(L.h)}</div>
     <div class="czt" style="font-size:17px;line-height:1.7;margin:6px 0 14px">${html}</div>
     <div class="todo-actions" id="ndCh" style="flex-direction:column;align-items:stretch">${ch.map((v,j)=>`<button class="cta alt" data-j="${j}" style="text-align:left">${KO[j+1]}. ${esc(v)}</button>`).join('')}</div>
@@ -2716,9 +2756,10 @@ function ndShow(){
     if(b.dataset.done)return; app().querySelectorAll('#ndCh button').forEach(x=>x.dataset.done='1');
     const v=ch[+b.dataset.j], good=L.x?v===it.ans:czOk(v,it.ans,L.t);
     app().querySelectorAll('#ndCh button').forEach(x=>{const vv=ch[+x.dataset.j];if(L.x?vv===it.ans:czOk(vv,it.ans,L.t)){x.style.background='var(--teal)';x.style.color='#fff';}else if(x===b){x.style.background='var(--kr)';x.style.color='#fff';}});
-    if(!ND.again)ndRecord(it,good); if(good&&!ND.again)ND.ok++; if(!good)ND.redo.push(it);
+    const rec=!ND.again&&!it._re; if(rec)ndRecord(it,good); if(good&&rec)ND.ok++;
+    if(!good){const gap=Math.min(8,ND.q.length-ND.i-1); if(rec&&gap>=3)ND.q.splice(ND.i+1+gap,0,Object.assign({},it,{_re:1})); else ND.redo.push(it);} /* 2026-11-18: 틀린 칸은 3~8칸 뒤 한 번 더(기록 안 함), 그래도 틀리면 세트 끝 다시 풀기 */
     const h=NDH[it.t+'|'+it.k], ss=(S.nd||{})[it.id]||{};
-    $('#ndFb').innerHTML=`<div class="czinfo" style="margin-top:12px">${good?'정답':'오답 — 정답 '+esc(it.ans)+(it.unit&&it.unit!=='freq'?' '+esc(it.unit):'')}${ND.again?'':' · 연속 '+(ss.st||0)+'/'+ND_GRAD+'일'+(ss.g?' · 졸업 ✓':'')}</div>
+    $('#ndFb').innerHTML=`<div class="czinfo" style="margin-top:12px">${good?'정답':'오답 — 정답 '+esc(it.ans)+(it.unit&&it.unit!=='freq'?' '+esc(it.unit):'')}${ND.again||it._re?'':' · 연속 '+(ss.st||0)+'/'+ND_GRAD+'일'+(ss.g?' · 졸업 ✓':'')}</div>
       ${h?`<div class="card" style="padding:12px 14px;margin-top:10px"><b>💡 연상</b><div style="margin-top:4px">${esc(h.m)}</div>${h.s?`<div class="czinfo" style="margin-top:4px">${esc(h.s)}</div>`:''}</div>`:''}
       <div class="czinfo" style="margin-top:6px">${L.x?(L.why?esc(L.why)+' · ':'')+'근거 · '+esc(NDX_SRC)+(L.k[1]!=='f'?' (증례 숫자로 허브가 계산)':''):'출처 · '+esc(tn)+' 정리 「'+esc(L.h)+'」'}</div>
       <div class="todo-actions" style="margin-top:12px"><button class="cta" id="ndNext">다음</button><button class="cta alt" id="ndDig">정리 보기</button><button class="cta alt" id="ndStop">그만</button></div>`;
