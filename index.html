@@ -593,8 +593,10 @@ async function load(){
   // 오답노트 이관: 한 번이라도 틀린 문제는 오답노트에 넣고, 마지막 오답 이후 연속 정답 수(box-1)를 이어받는다
   ['q','gq'].forEach(g=>Object.values(S[g]).forEach(s=>{if(s&&s.wl===undefined){
     if(s.wrong>0){s.wl=1;s.ws=Math.max(0,(s.box||1)-1);}else{s.wl=0;s.ws=0;}}}));
+  // 해제 기준 변경(5→3, 2026-11-22): 이미 기준 이상 연속 정답인 문항은 바로 오답노트에서 해제
+  ['q','gq'].forEach(g=>Object.values(S[g]).forEach(s=>{if(s&&s.wl===1&&(s.ws||0)>=WRONG_EXIT){s.wl=0;s.ws=0;}}));
 }
-const WRONG_EXIT=5; // 틀린 뒤 이만큼 맞히면 오답노트에서 빠짐
+const WRONG_EXIT=3; // 틀린 뒤 이만큼 맞히면 오답노트에서 빠짐
 function inWrong(s){return !!(s&&s.wl===1);}
 let saveT=null;
 function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{try{S.ndStat=ndStats();S.ndStat.day=today();S.ndStat.ids=ndPool().filter(ndActive).map(it=>it.id);S.ndNeed=ndNeed();}catch(e){} /* 2026-11-18: 진도 계획기가 드릴 대상 칸으로 다음 날 목표를 같은 규칙으로 다시 계산 */try{S.prog=Object.fromEntries(TOPICS.map(t=>{const p=topicProg(t.id);return [t.id,{qd:p.qd,qn:p.qn,cd:p.cd,cn:p.cn,acc:p.acc,full:p.full}];}));}catch(e){}if(SYNC.on&&!SYNC.applying)S._ts=Date.now();try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}if(SYNC.on&&!SYNC.applying)SYNC.push();},150);}
@@ -654,7 +656,7 @@ function mockBuild(fmt,opt){
 }
 let MOCKT=null;
 /* 모의고사 누적 오답노트: 지금까지 모든 모의고사에서 틀리거나 비운 문항을 파트(공통/전문)·영역별로 묶음.
-   '남음' = 아직 오답노트(wl)에 있는 문항, 드릴에서 5연속 맞히면 졸업해 빠짐 */
+   '남음' = 아직 오답노트(wl)에 있는 문항, 드릴에서 WRONG_EXIT(3)회 연속 맞히면 졸업해 빠짐 */
 function mockWrongBook(){
   const hs=(S.mock&&S.mock.hist||[]).filter(h=>h.res);
   if(!hs.length)return {html:'',groups:{}};
@@ -677,7 +679,7 @@ function mockWrongBook(){
         <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" data-mwt="${t}" data-all="1">전체</button></td></tr>`;};
   const sec=part=>{const rs=order.filter(([,g])=>g.part===part);return rs.length?`<tr><td colspan="4" style="font-weight:700;padding-top:10px">${part}과목</td></tr>`+rs.map(row).join(''):'';};
   const html=`<div class="dg-h">모의고사 오답노트 · 누적 ${hs.length}회</div>
-    <p class="mk-note">지금까지 모의고사에서 틀리거나 비운 ${nAll}문항 중 <b>${nLeft}문항</b>이 아직 오답노트에 남아 있어요. 드릴에서 5연속 맞히면 빠져요. 정답률은 모의고사에서만 집계한 값이에요.</p>
+    <p class="mk-note">지금까지 모의고사에서 틀리거나 비운 ${nAll}문항 중 <b>${nLeft}문항</b>이 아직 오답노트에 남아 있어요. 드릴에서 ${WRONG_EXIT}연속 맞히면 빠져요. 정답률은 모의고사에서만 집계한 값이에요.</p>
     <table class="mk-hist"><thead><tr><th>영역</th><th>모의고사 정답률</th><th>남음/틀린 문항</th><th></th></tr></thead><tbody>${sec('공통')}${sec('전문')}</tbody></table>`;
   return {html,groups};
 }
