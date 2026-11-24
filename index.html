@@ -192,6 +192,18 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
 .hllist .hi{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.6;padding:5px 0}
 .hllist .sw{width:11px;height:11px;border-radius:3px;flex:0 0 auto;margin-top:4px}
 .hllist .mm{color:var(--muted);font-size:12.5px}
+.hlb-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0 14px}
+.hlb-tools select,.hlb-tools input[type=search]{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.hlb-chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 10px;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.hlb-chip.on{border-color:var(--kr,#16282e);box-shadow:0 0 0 1px var(--kr,#16282e) inset;font-weight:700}
+.hlb-chip .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+.hlb-topic{margin:18px 0 6px;font-weight:700;font-size:15px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.hlb-src{margin:10px 0 2px;font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:baseline}
+.hlb-src .open{border:0;background:none;color:var(--kr,#1d5fa8);text-decoration:underline;cursor:pointer;font-size:12px;padding:0}
+.hlb-item{display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:1.65;padding:4px 0}
+.hlb-item .sw{width:11px;height:11px;border-radius:3px;flex:0 0 auto;margin-top:6px}
+.hlb-item mark{background:transparent;padding:0}
+.hlb-item .mm{color:var(--muted);font-size:12.5px}
 .enorig{margin:0 0 14px;border:1px dashed var(--line);border-radius:8px;padding:8px 12px;background:var(--paper)}
 .enorig>summary{cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.02em}
 .enorig .stem{font-size:14px;color:var(--muted)}
@@ -530,6 +542,7 @@ mark.hlmark.hasmemo{border-bottom:2px dotted var(--ink)}
     <button data-v="num">숫자·공식</button>
     <button data-v="drill">케이스 드릴</button>
     <button data-v="mock">모의고사</button>
+    <button data-v="hlbook">형광펜</button>
     <button data-v="plan">학습 일정</button>
     <button data-v="sync">동기화</button>
   </nav>
@@ -802,12 +815,69 @@ function renderMockResult(r){
   $('#mkAgain').onclick=()=>renderMockHome();window.scrollTo(0,0);
 }
 
+/* ================= 형광펜 모아보기 (2026-11-24) =================
+   - 드래그 형광펜(S.hl)만 모음. 펜슬 필기(그림 도구·INK)는 제외
+   - 키 형식: 'dg:<토픽>'(정리본), 'q:g<문항id>'(가이드라인 문항), 'q:c<번호>'(ACCP 문항) */
+let HLB={c:'all',topic:'all',memo:false,q:''};
+function hlbSources(){
+  const out=[];
+  Object.entries(S.hl||{}).forEach(([k,arr])=>{
+    if(!Array.isArray(arr)||!arr.length)return;
+    let topic=null,label='',open=null;
+    if(k.startsWith('dg:')){topic=k.slice(3);label='정리본';open=()=>{VIEW='curriculum';document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.v==='curriculum'));renderDigest(topic);};}
+    else if(k.startsWith('q:g')){const id=k.slice(3),it=GQ_BY_ID[id];if(!it)return;topic=it.topic;
+      label='문항 · '+String(it.q||'').replace(/\s+/g,' ').slice(0,48)+'…';
+      open=()=>{nav('drill');startSession([id],'[형광펜] 원문 문항','guide');};}
+    else if(k.startsWith('q:c')){const id=+k.slice(3),it=BANK.find(x=>x.id===id);if(!it)return;
+      try{topic=mockTopicOf('c:'+id);}catch(e){topic=null;}
+      label='ACCP 문항 '+id+' · '+String(it.stemKo||it.stem||'').replace(/\s+/g,' ').slice(0,48)+'…';
+      open=()=>{nav('drill');startSession([id],'[형광펜] 원문 문항','hl');};}
+    else return;
+    out.push({k,topic:topic||'etc',label,open,items:arr});
+  });
+  return out;
+}
+function renderHlBook(){
+  const src=hlbSources();
+  const order=TOPICS.map(t=>t.id);
+  const tname=t=>TOPIC_BY[t]?TOPIC_BY[t].name:'기타';
+  const topics=[...new Set(src.map(s=>s.topic))].sort((a,b)=>(order.indexOf(a)+1||999)-(order.indexOf(b)+1||999));
+  const q=HLB.q.trim().toLowerCase();
+  const pass=x=>(HLB.c==='all'||(x.c||'y')===HLB.c)&&(!HLB.memo||x.memo)&&(!q||String(x.t).toLowerCase().includes(q)||String(x.memo||'').toLowerCase().includes(q));
+  let total=0, shown=0;
+  const groups=topics.filter(t=>HLB.topic==='all'||HLB.topic===t).map(t=>{
+    const ss=src.filter(s=>s.topic===t).sort((a,b)=>(a.k.startsWith('dg:')?0:1)-(b.k.startsWith('dg:')?0:1));
+    const body=ss.map(s=>{const its=s.items.filter(pass);shown+=its.length;if(!its.length)return '';
+      return `<div class="hlb-src"><span>${esc(s.label)}</span><button class="open" data-hlbk="${esc(s.k)}">원문 열기</button></div>`
+        +its.map(x=>`<div class="hlb-item"><span class="sw" style="background:${HLC[x.c]||HLC.y}"></span><div><mark style="background:${HLC[x.c]||HLC.y}55">${esc(x.t)}</mark>${x.memo?`<div class="mm">↳ ${esc(x.memo)}</div>`:''}</div></div>`).join('');}).join('');
+    return body?`<div class="hlb-topic">${esc(tname(t))}</div>${body}`:'';}).join('');
+  src.forEach(s=>total+=s.items.length);
+  const chip=(c,lab)=>`<button class="hlb-chip ${HLB.c===c?'on':''}" data-hlbc="${c}">${c==='all'?'':`<span class="sw" style="background:${HLC[c]}"></span>`}${lab}</button>`;
+  app().innerHTML=`<div class="card" style="padding:22px">
+    <h2 style="margin:0 0 4px;font-size:20px">형광펜 모아보기</h2>
+    <p class="mk-note">드래그 형광펜으로 표시한 문장만 모았어요(펜슬 필기 제외). 전체 ${total}개 · 표시 ${shown}개</p>
+    <div class="hlb-tools">
+      ${chip('all','전체')}${chip('y','노랑')}${chip('g','초록')}${chip('b','파랑')}${chip('p','분홍')}
+      <select id="hlbTopic"><option value="all">모든 토픽</option>${topics.map(t=>`<option value="${t}" ${HLB.topic===t?'selected':''}>${esc(tname(t))}</option>`).join('')}</select>
+      <label style="font-size:13px"><input type="checkbox" id="hlbMemo" ${HLB.memo?'checked':''}> 메모 있는 것만</label>
+      <input type="search" id="hlbQ" placeholder="검색" value="${esc(HLB.q)}">
+    </div>
+    ${groups||'<p class="mk-note">조건에 맞는 형광펜이 없어요.</p>'}
+  </div>`;
+  app().querySelectorAll('[data-hlbc]').forEach(b=>b.onclick=()=>{HLB.c=b.dataset.hlbc;renderHlBook();});
+  $('#hlbTopic').onchange=e=>{HLB.topic=e.target.value;renderHlBook();};
+  $('#hlbMemo').onchange=e=>{HLB.memo=e.target.checked;renderHlBook();};
+  let tq=null;$('#hlbQ').oninput=e=>{clearTimeout(tq);const v=e.target.value;tq=setTimeout(()=>{HLB.q=v;renderHlBook();const el=$('#hlbQ');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},250);};
+  const map=Object.fromEntries(src.map(s=>[s.k,s]));
+  app().querySelectorAll('[data-hlbk]').forEach(b=>b.onclick=()=>{const s=map[b.dataset.hlbk];if(s&&s.open)s.open();});
+}
+
 /* ================= router ================= */
 let VIEW='home';
 let DIGVIEW=null;
 function nav(v){VIEW=v;CZKEY=null;SESS=null;if(typeof ND!=='undefined')ND=null;clearInterval(MOCKT);if(v!=='drill')tSet(null);markVisit();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='num')renderNum(); else if(v==='calc')renderCalc(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else if(v==='mock')renderMockHome(); else renderDrillHome();
+  if(v==='home')renderHome(); else if(v==='curriculum')renderCurriculum(); else if(v==='mnem')renderMnem(); else if(v==='num')renderNum(); else if(v==='calc')renderCalc(); else if(v==='plan')renderPlan(); else if(v==='sync')renderSync(); else if(v==='mock')renderMockHome(); else if(v==='hlbook')renderHlBook(); else renderDrillHome();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>nav(b.dataset.v));
